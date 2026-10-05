@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickBite | Premium Multi-Restaurant Food Hub</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="nav-container">
+            <!-- Brand Logo & Name -->
+            <div class="logo" onclick="switchRoleView('user')">
+                <img src="logo.png" alt="QuickBite Logo" class="brand-logo-img" onerror="this.style.display='none'">
+                <span>Quick<span class="logo-accent">Bite</span></span>
+            </div>
+
+            <!-- Main Navigation Links -->
+            <nav class="nav-main-links">
+                <button id="navMenuBtn" class="nav-link-btn active" onclick="switchRoleView('user')">🍽️ Menu</button>
+                <button id="navOrdersBtn" class="nav-link-btn" onclick="showCustomerOrders()">📦 My Orders <span id="navOrdersBadge" class="nav-badge" style="display:none;">0</span></button>
+                <button id="staffPortalNavBtn" class="nav-link-btn nav-portal-btn" onclick="openStaffPortal()" style="display:none;">Portal</button>
+            </nav>
+
+            <!-- Search Bar (In Customer View) -->
+            <div class="nav-search" id="navSearchWrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="Search dishes, restaurants, cuisines..." oninput="filterMenu()">
+                <button id="searchClearBtn" class="search-clear-btn" onclick="clearSearch()" style="display:none;">&times;</button>
+            </div>
+
+            <!-- User Auth & Cart Area -->
+            <div class="nav-actions">
+                <div id="authStatusArea">
+                    <button class="btn-login" onclick="openLoginModal()">Login / Sign Up</button>
+                </div>
+                
+                <div id="cartNavBtn" class="btn-cart" onclick="toggleCart()">
+                    <span>Cart</span>
+                    <span id="cartCount" class="cart-badge">0</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Context Banner (Shown when non-customer role is active or staff is viewing menu) -->
+    <div id="roleBanner" class="role-banner" style="display: none;">
+        <div class="role-banner-left">
+            <span>Active Session: <strong id="activeRoleName">Restaurant Portal</strong></span>
+            <button id="btnReturnToDashboard" class="btn-return-dashboard" onclick="returnToActivePortal()" style="display:none;">Go to Dashboard &rarr;</button>
+        </div>
+        <div class="role-banner-actions">
+            <!-- Role switcher for admin / testing -->
+            <div id="roleSwitcherWrapper" class="role-switcher-wrap" style="display:none;">
+                <label for="roleSwitchSelect">View As:</label>
+                <select id="roleSwitchSelect" onchange="changeViewRole(this.value)">
+                    <option value="user">Customer View</option>
+                    <option value="restaurant">Restaurant Portal</option>
+                    <option value="rider">Rider Fleet</option>
+                    <option value="admin">Admin Dashboard</option>
+                </select>
+            </div>
+            <button onclick="logoutUser()" class="btn-exit-role">Logout</button>
+        </div>
+    </div>
+
+    <main class="main-wrapper">
+
+        <!-- ================= 1. CUSTOMER VIEW ================= -->
+        <section id="userSection" class="role-view active">
+            
+            <!-- Hero Banner -->
+            <div class="hero-banner">
+                <div class="hero-content">
+                    <span class="hero-pill">⚡ 50% FLAT OFF on First Order</span>
+                    <h1>Craving Something <span class="text-gradient">Delicious?</span></h1>
+                    <p>Order fresh signature meals from top-rated restaurants delivered to your doorstep in 20 mins.</p>
+                </div>
+                <div class="hero-image">
+                    <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80" alt="Delicious Food" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80'">
+                </div>
+            </div>
+
+            <!-- Category Filter Chips -->
+            <div class="category-strip" id="categoryChips">
+                <button class="cat-chip active" data-category="All" onclick="filterCategory('All')">All Items</button>
+                <button class="cat-chip" data-category="Biryani & Meals" onclick="filterCategory('Biryani & Meals')">Biryani & Meals</button>
+                <button class="cat-chip" data-category="Pizzas" onclick="filterCategory('Pizzas')">Pizzas</button>
+                <button class="cat-chip" data-category="Rolls & Snacks" onclick="filterCategory('Rolls & Snacks')">Rolls & Snacks</button>
+                <button class="cat-chip" data-category="Desserts" onclick="filterCategory('Desserts')">Desserts</button>
+                <button class="cat-chip" data-category="Brews & Shakes" onclick="filterCategory('Brews & Shakes')">Brews & Shakes</button>
+            </div>
+
+            <div class="section-title">
+                <div>
+                    <h2>Explore Menu from All Partner Restaurants</h2>
+                    <p class="section-subtitle">Handcrafted dishes prepared fresh by top chefs.</p>
+                </div>
+                <span class="tag-badge" id="menuCountBadge">Loading dishes...</span>
+            </div>
+            
+            <div class="food-grid" id="foodGrid">
+                <!-- Food items dynamically rendered -->
+            </div>
+        </section>
+
+        <!-- ================= 2. RESTAURANT PARTNER VIEW ================= -->
+        <section id="restaurantSection" class="role-view">
+            <!-- Restaurant Storefront Hero Card -->
+            <div class="restaurant-hero-card card">
+                <div class="rest-hero-content">
+                    <div class="rest-avatar-wrap">
+                        <img id="restHeroImg" src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=200&auto=format&fit=crop&q=80" alt="Restaurant Logo" onerror="handleImageError(this, 'Default')">
+                        <span class="rest-verified-badge" title="Verified Partner">✓</span>
+                    </div>
+                    <div class="rest-hero-info">
+                        <div class="rest-title-row">
+                            <h2 id="restHeroName">Restaurant Partner Portal</h2>
+                            <span id="restStoreStatusPill" class="store-status-pill status-open">🟢 Store Online</span>
+                        </div>
+                        <p id="restHeroDesc" class="rest-hero-desc">Manage kitchen orders, pricing, live inventory, and restaurant operations.</p>
+                        <div class="rest-meta-tags">
+                            <span class="meta-tag">⭐ 4.8 Rating (350+ reviews)</span>
+                            <span class="meta-tag" id="restPrepTimeTag">⏱️ ~20 mins avg prep</span>
+                            <span class="meta-tag" id="restOwnerPill">👤 Partner Kitchen</span>
+                        </div>
+                        <div id="restStoreSwitcherWrap" class="store-switcher-wrap" style="display:none; margin-top:10px;">
+                            <label for="restStoreSelect" style="font-size:12px; font-weight:700; color:#cbd5e1; margin-right:8px;">🏬 Managing Store:</label>
+                            <select id="restStoreSelect" onchange="switchManagingRestaurant(this.value)" class="rest-store-select">
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="rest-hero-actions">
+                    <div class="store-toggle-group">
+                        <label class="switch-label">Live Store Status:</label>
+                        <button id="restaurantOpenToggleBtn" class="btn-store-status is-open" onclick="toggleCurrentRestaurantOpen()">
+                            <span class="status-indicator"></span>
+                            <span id="restOpenToggleText">Accepting Orders</span>
+                        </button>
+                    </div>
+                    <div class="rest-quick-btns">
+                        <button class="btn-primary" onclick="openAddDishModal()">+ Add New Dish</button>
+                        <button class="btn-outline-white" id="restAudioChimeBtn" onclick="toggleOrderChime()" title="Toggle kitchen audio chime">🔔 Chime: On</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Claim Notice (Shown if user has restaurant role but no restaurant is assigned yet) -->
+            <div id="restaurantClaimCard" class="card claim-card" style="display:none; margin-top:20px;">
+                <div class="claim-icon">🏪</div>
+                <div class="claim-body">
+                    <h3>Link Your Partner Restaurant</h3>
+                    <p>Select an available restaurant from our partner directory to manage its menu and orders, or link your store.</p>
+                    <div class="claim-controls">
+                        <select id="claimRestaurantSelect">
+                            <option value="">-- Choose an available restaurant --</option>
+                        </select>
+                        <button class="btn-primary" onclick="handleClaimRestaurant()">Claim & Manage Restaurant</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="restaurantMainLayout" style="margin-top:24px;">
+                <!-- Operational KPIs Row -->
+                <div class="stats-row rest-kpi-row">
+                    <div class="stat-box rest-kpi-box">
+                        <span class="stat-icon">💰</span>
+                        <div>
+                            <span class="stat-title">Today's Revenue</span>
+                            <h3 id="restStatRevenue">₹0</h3>
+                        </div>
+                    </div>
+                    <div class="stat-box rest-kpi-box">
+                        <span class="stat-icon">🔔</span>
+                        <div>
+                            <span class="stat-title">Active Kitchen Queue</span>
+                            <h3 id="restStatActiveQueue">0</h3>
+                        </div>
+                    </div>
+                    <div class="stat-box rest-kpi-box">
+                        <span class="stat-icon">✅</span>
+                        <div>
+                            <span class="stat-title">Completed Orders</span>
+                            <h3 id="restStatCompletedOrders">0</h3>
+                        </div>
+                    </div>
+                    <div class="stat-box rest-kpi-box">
+                        <span class="stat-icon">🍽️</span>
+                        <div>
+                            <span class="stat-title">Live Menu Dishes</span>
+                            <h3 id="restStatDishes">0</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs Bar -->
+                <div class="restaurant-nav-tabs">
+                    <button class="rest-nav-tab active" onclick="switchRestaurantTab('orders')" id="restTabBtnOrders">
+                        🛎️ Kitchen KDS & Orders <span id="restBadgeActiveOrders" class="tab-badge">0</span>
+                    </button>
+                    <button class="rest-nav-tab" onclick="switchRestaurantTab('menu')" id="restTabBtnMenu">
+                        🍽️ Menu Catalog & Stock <span id="restBadgeTotalDishes" class="tab-badge">0</span>
+                    </button>
+                    <button class="rest-nav-tab" onclick="switchRestaurantTab('analytics')" id="restTabBtnAnalytics">
+                        📊 Sales & Performance
+                    </button>
+                    <button class="rest-nav-tab" onclick="switchRestaurantTab('settings')" id="restTabBtnSettings">
+                        ⚙️ Store Profile & Settings
+                    </button>
+                </div>
+
+                <!-- TAB 1: Live Kitchen Display System (KDS) & Incoming Orders -->
+                <div id="restPaneOrders" class="rest-tab-pane active">
+                    <div class="kds-filter-bar card">
+                        <div class="kds-filter-group">
+                            <button class="kds-filter-chip active" onclick="filterKitchenOrders('all', this)">All Orders (<span id="kdsCountAll">0</span>)</button>
+                            <button class="kds-filter-chip" onclick="filterKitchenOrders('pending', this)">🚨 New Pending (<span id="kdsCountPending">0</span>)</button>
+                            <button class="kds-filter-chip" onclick="filterKitchenOrders('cooking', this)">👨‍🍳 Cooking in Kitchen (<span id="kdsCountCooking">0</span>)</button>
+                            <button class="kds-filter-chip" onclick="filterKitchenOrders('ready', this)">📦 Ready for Fleet (<span id="kdsCountReady">0</span>)</button>
+                            <button class="kds-filter-chip" onclick="filterKitchenOrders('history', this)">📜 Fulfilled History (<span id="kdsCountHistory">0</span>)</button>
+                        </div>
+                        <div class="kds-actions-right">
+                            <button class="btn-sm btn-outline" onclick="loadRestaurantOrders()">🔄 Refresh Queue</button>
+                        </div>
+                    </div>
+
+                    <div id="restaurantOrdersList" class="kds-orders-grid" style="margin-top:20px;">
+                        <div class="no-orders-message">Loading kitchen orders queue...</div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: Live Menu Catalog & Inventory Stock Management -->
+                <div id="restPaneMenu" class="rest-tab-pane">
+                    <div class="menu-catalog-toolbar card">
+                        <div class="toolbar-left">
+                            <div class="toolbar-search">
+                                <span>🔍</span>
+                                <input type="text" id="restMenuSearchInput" placeholder="Search dishes by name or category..." oninput="filterRestaurantMenu()">
+                            </div>
+                            <select id="restMenuCategoryFilter" onchange="filterRestaurantMenu()" class="role-select">
+                                <option value="All">All Categories</option>
+                                <option value="Biryani & Meals">Biryani & Meals</option>
+                                <option value="Pizzas">Pizzas</option>
+                                <option value="Rolls & Snacks">Rolls & Snacks</option>
+                                <option value="Desserts">Desserts</option>
+                                <option value="Brews & Shakes">Brews & Shakes</option>
+                            </select>
+                            <select id="restMenuStockFilter" onchange="filterRestaurantMenu()" class="role-select">
+                                <option value="All">All Stock Status</option>
+                                <option value="in_stock">In Stock Only</option>
+                                <option value="out_of_stock">Sold Out Only</option>
+                            </select>
+                        </div>
+                        <button class="btn-primary" onclick="openAddDishModal()">+ Add New Dish</button>
+                    </div>
+
+                    <div class="card table-card" style="margin-top:20px;">
+                        <div class="table-card-header">
+                            <div>
+                                <h3>Restaurant Dishes & Pricing</h3>
+                                <p class="text-muted-sm">Toggle item availability when ingredients run out, edit pricing, or add new chef specials.</p>
+                            </div>
+                            <span id="restaurantItemCountBadge" class="tag-badge">0 items listed</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table id="restaurantMenuTable">
+                                <thead>
+                                    <tr>
+                                        <th>Dish & Preview</th>
+                                        <th>Category</th>
+                                        <th>Price</th>
+                                        <th>Stock Status</th>
+                                        <th>Quick Availability</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="6" style="text-align:center;color:#888;padding:25px;">Loading menu items...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: Sales Analytics & Performance -->
+                <div id="restPaneAnalytics" class="rest-tab-pane">
+                    <div class="stats-row">
+                        <div class="stat-box">
+                            <span class="stat-icon">📈</span>
+                            <div>
+                                <span class="stat-title">Fulfilled Order Rate</span>
+                                <h3 id="restStatFulfillmentRate">98.5%</h3>
+                            </div>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-icon">⭐</span>
+                            <div>
+                                <span class="stat-title">Food Quality Score</span>
+                                <h3>4.9 / 5.0</h3>
+                            </div>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-icon">🛵</span>
+                            <div>
+                                <span class="stat-title">Avg Fleet Dispatch</span>
+                                <h3>18 mins</h3>
+                            </div>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-icon">👥</span>
+                            <div>
+                                <span class="stat-title">Repeat Customers</span>
+                                <h3>76%</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-grid" style="display:grid; grid-template-columns:1.5fr 1fr; gap:20px; margin-top:20px;">
+                        <div class="card table-card">
+                            <div class="table-card-header">
+                                <h3>🏆 Top Selling Dishes</h3>
+                                <span class="tag-badge">By Popularity</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table id="restTopDishesTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Dish</th>
+                                            <th>Category</th>
+                                            <th>Price</th>
+                                            <th>Units Sold</th>
+                                            <th>Revenue</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="restTopDishesTbody">
+                                        <!-- Top dishes dynamically populated -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="table-card-header">
+                                <h3>Customer Satisfaction</h3>
+                                <span class="tag-badge">Last 30 Days</span>
+                            </div>
+                            <div class="rating-breakdown">
+                                <div class="rating-metric">
+                                    <div class="metric-top"><span>Food Taste & Freshness</span><strong>98%</strong></div>
+                                    <div class="metric-bar"><div class="metric-fill" style="width:98%;"></div></div>
+                                </div>
+                                <div class="rating-metric">
+                                    <div class="metric-top"><span>Packaging Quality</span><strong>95%</strong></div>
+                                    <div class="metric-bar"><div class="metric-fill" style="width:95%;"></div></div>
+                                </div>
+                                <div class="rating-metric">
+                                    <div class="metric-top"><span>Kitchen Speed</span><strong>92%</strong></div>
+                                    <div class="metric-bar"><div class="metric-fill" style="width:92%;"></div></div>
+                                </div>
+                                <div class="rating-metric">
+                                    <div class="metric-top"><span>Order Accuracy</span><strong>99%</strong></div>
+                                    <div class="metric-bar"><div class="metric-fill" style="width:99%;"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: Store Profile & Settings -->
+                <div id="restPaneSettings" class="rest-tab-pane">
+                    <div class="card" style="max-width:750px; margin:0 auto;">
+                        <div class="table-card-header">
+                            <div>
+                                <h3>Restaurant Profile & Storefront Settings</h3>
+                                <p class="text-muted-sm">Update your store description, banner visuals, and operational timings.</p>
+                            </div>
+                        </div>
+                        <form id="restSettingsForm" onsubmit="saveRestaurantSettings(event)" style="margin-top:15px;">
+                            <div class="input-group">
+                                <label>Restaurant Display Name</label>
+                                <input type="text" id="settingRestName" placeholder="e.g. Royal Biryani House" required>
+                            </div>
+                            <div class="input-group">
+                                <label>Cuisine Specialties & Tagline</label>
+                                <input type="text" id="settingRestDesc" placeholder="e.g. Authentic Dum Biryanis, Slow Charcoal Curries & Kebabs" required>
+                            </div>
+                            <div class="input-group">
+                                <label>Cover / Banner Image URL</label>
+                                <input type="url" id="settingRestImg" placeholder="https://images.unsplash.com/..." required oninput="previewSettingsCover(this.value)">
+                            </div>
+                            <div class="image-preview-box" id="settingsImgPreview" style="margin-bottom:16px;">
+                                <img id="settingsPreviewImgEl" src="" alt="Banner Preview" style="width:100%; height:160px; object-fit:cover; border-radius:10px; display:none;">
+                            </div>
+                            <div class="input-group">
+                                <label>Estimated Preparation Time (Minutes)</label>
+                                <input type="number" id="settingRestPrepTime" value="20" min="5" max="90" required>
+                            </div>
+                            <button type="submit" id="btnSaveRestSettings" class="btn-primary" style="margin-top:10px;">💾 Save Store Profile</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= 3. RIDER VIEW ================= -->
+        <section id="riderSection" class="role-view">
+            <div class="dashboard-header">
+                <h2>Delivery Fleet Portal</h2>
+                <p>Pick up orders ready at restaurants and deliver them safely to customers.</p>
+            </div>
+
+            <!-- Rider Fleet Statistics -->
+            <div class="stats-row fleet-stats-row">
+                <div class="stat-box">
+                    <span class="stat-icon">📦</span>
+                    <div>
+                        <span class="stat-title">Available for Pickup</span>
+                        <h3 id="riderStatAvailable">0</h3>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">🛵</span>
+                    <div>
+                        <span class="stat-title">In-Transit Deliveries</span>
+                        <h3 id="riderStatActive">0</h3>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">✅</span>
+                    <div>
+                        <span class="stat-title">Completed Today</span>
+                        <h3 id="riderStatCompleted">0</h3>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">💵</span>
+                    <div>
+                        <span class="stat-title">Estimated Fleet Earnings</span>
+                        <h3>₹<span id="riderStatEarnings">0</span></h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rider Segment Tabs -->
+            <div class="rider-tabs-strip">
+                <button class="rider-tab-btn active" id="riderTabAvailableBtn" onclick="switchRiderTab('available')">Available Pickups (<span id="riderTabAvailableCount">0</span>)</button>
+                <button class="rider-tab-btn" id="riderTabActiveBtn" onclick="switchRiderTab('active')">My Active Deliveries (<span id="riderTabActiveCount">0</span>)</button>
+                <button class="rider-tab-btn" id="riderTabHistoryBtn" onclick="switchRiderTab('history')">Completed History</button>
+            </div>
+
+            <div id="riderOrdersList" class="rider-grid">
+                <!-- Orders rendered dynamically based on tab -->
+            </div>
+        </section>
+
+        <!-- ================= 4. ADMIN VIEW ================= -->
+        <section id="adminSection" class="role-view">
+            <div class="dashboard-header">
+                <h2>Platform Admin Dashboard</h2>
+                <p>Track real-time orders, earnings, user roles, and partner restaurants.</p>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="stats-row">
+                <div class="stat-box">
+                    <span class="stat-icon">📦</span>
+                    <div>
+                        <span class="stat-title">Total Orders</span>
+                        <h3 id="statTotalOrders">0</h3>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">💰</span>
+                    <div>
+                        <span class="stat-title">Platform Revenue</span>
+                        <h3>₹<span id="statRevenue">0</span></h3>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">🍽️</span>
+                    <div>
+                        <span class="stat-title">Listed Dishes</span>
+                        <h3 id="statMenuItems">0</h3>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">👥</span>
+                    <div>
+                        <span class="stat-title">Registered Users</span>
+                        <h3 id="statTotalUsers">0</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Tabs Navigation -->
+            <div class="admin-tabs">
+                <button class="admin-tab-btn active" onclick="switchAdminTab('orders')" id="adminTabBtnOrders">📋 All Platform Orders</button>
+                <button class="admin-tab-btn" onclick="switchAdminTab('users')" id="adminTabBtnUsers">👥 User & Role Management</button>
+                <button class="admin-tab-btn" onclick="switchAdminTab('restaurants')" id="adminTabBtnRestaurants">🏪 Partner Restaurants</button>
+            </div>
+
+            <!-- Admin Tab 1: Live Platform Orders -->
+            <div id="adminTabPaneOrders" class="admin-tab-pane active">
+                <div class="card table-card">
+                    <div class="table-card-header">
+                        <h3>Live Platform Orders</h3>
+                        <div class="order-filter-chips">
+                            <button class="filter-chip active" onclick="filterAdminOrders('all', this)">All</button>
+                            <button class="filter-chip" onclick="filterAdminOrders('pending', this)">Pending</button>
+                            <button class="filter-chip" onclick="filterAdminOrders('in_progress', this)">In Kitchen/Transit</button>
+                            <button class="filter-chip" onclick="filterAdminOrders('delivered', this)">Delivered</button>
+                            <button class="filter-chip" onclick="filterAdminOrders('cancelled', this)">Cancelled</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="adminOrdersTable">
+                            <thead>
+                                <tr>
+                                    <th>Order ID</th>
+                                    <th>Customer</th>
+                                    <th>Restaurant & Items</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="6" style="text-align:center;color:#888;">Loading orders...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Tab 2: User & Role Management -->
+            <div id="adminTabPaneUsers" class="admin-tab-pane">
+                <div class="card table-card">
+                    <div class="table-card-header">
+                        <div>
+                            <h3>Registered Users & Role Assignment</h3>
+                            <p class="text-muted-sm">Assign platform roles: Customer, Restaurant Partner, Delivery Rider, or Platform Admin.</p>
+                        </div>
+                        <button class="btn-login" onclick="loadAdminUsers()">🔄 Refresh Users</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="adminUsersTable">
+                            <thead>
+                                <tr>
+                                    <th>User Name</th>
+                                    <th>User ID</th>
+                                    <th>Current Role</th>
+                                    <th>Change Role</th>
+                                    <th>Registered Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="5" style="text-align:center;color:#888;">Loading users...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Tab 3: Partner Restaurants -->
+            <div id="adminTabPaneRestaurants" class="admin-tab-pane">
+                <div class="card table-card">
+                    <div class="table-card-header">
+                        <div>
+                            <h3>Partner Restaurant Directory</h3>
+                            <p class="text-muted-sm">Manage restaurant listings, assign owners, and toggle open/closed store status.</p>
+                        </div>
+                        <button class="btn-login" onclick="loadAdminRestaurants()">🔄 Refresh Restaurants</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="adminRestaurantsTable">
+                            <thead>
+                                <tr>
+                                    <th>Restaurant Name</th>
+                                    <th>Slug</th>
+                                    <th>Assigned Owner</th>
+                                    <th>Store Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="5" style="text-align:center;color:#888;">Loading restaurants...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= 5. CUSTOMER ORDERS VIEW ================= -->
+        <section id="ordersSection" class="role-view">
+            <div class="dashboard-header dashboard-header-flex">
+                <div>
+                    <h2>My Orders & Live Tracking</h2>
+                    <p>Track your real-time meals, delivery milestones, and order history.</p>
+                </div>
+                <button class="btn-login" onclick="loadCustomerOrders()">🔄 Refresh Orders</button>
+            </div>
+            <div id="customerOrdersList" class="orders-timeline-grid">
+                <!-- Orders rendered dynamically with step milestones -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ================= PRODUCT DETAILS & BUY NOW MODAL ================= -->
+    <div id="productDetailModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'productDetailModal')">
+        <div class="modal-box detail-modal-box">
+            <button class="close-x detail-close-x" onclick="closeProductDetailModal()">&times;</button>
+            <div class="detail-grid">
+                <div class="detail-img-wrap">
+                    <img id="modalProductImg" src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80" alt="Product Photo">
+                    <span class="detail-res-badge" id="modalProductRes"></span>
+                </div>
+                <div class="detail-info-wrap">
+                    <span class="tag-badge" id="modalProductCat">Category</span>
+                    <h2 id="modalProductTitle">Dish Title</h2>
+                    <p class="detail-rating">⭐ 4.8 (250+ reviews) &bull; <span>20-25 mins delivery</span></p>
+                    <p class="detail-desc" id="modalProductDesc">Dish description goes here...</p>
+                    
+                    <div class="detail-price-box">
+                        <span class="detail-price-label">Price:</span>
+                        <span class="detail-price-val">₹<span id="modalProductPrice">0</span></span>
+                    </div>
+
+                    <div class="detail-actions">
+                        <button class="btn-outline-action" id="modalAddToCartBtn">Add to Cart</button>
+                        <button class="btn-primary-action" id="modalBuyNowBtn">⚡ Buy Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= AUTHENTICATION MODAL ================= -->
+    <div id="loginModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'loginModal')">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3 id="authModalTitle">Login to QuickBite</h3>
+                    <p id="authModalSubtitle">Use your email and password to continue.</p>
+                </div>
+                <button class="close-x" onclick="closeLoginModal()">&times;</button>
+            </div>
+
+            <form onsubmit="handleAuthSubmit(event)">
+                <div class="input-group" id="authNameGroup" style="display:none;">
+                    <label>Full Name</label>
+                    <input type="text" id="loginUsername" placeholder="e.g. Rahul Sharma">
+                </div>
+
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" placeholder="you@example.com" required autocomplete="email">
+                </div>
+
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" placeholder="Minimum 6 characters" required minlength="6" autocomplete="current-password">
+                </div>
+
+                <button type="submit" id="authSubmitBtn" class="btn-primary full-width">Login</button>
+                <button type="button" id="authModeToggle" class="auth-mode-toggle" onclick="toggleAuthMode()">Create a customer account</button>
+                <p id="authMessage" class="auth-message" aria-live="polite"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= CART MODAL ================= -->
+    <div id="cartModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'cartModal')">
+        <div class="modal-box cart-modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3>Your Food Cart</h3>
+                    <p id="cartRestaurantLabel" class="text-muted-sm" style="margin:2px 0 0;"></p>
+                </div>
+                <button class="close-x" onclick="toggleCart()">&times;</button>
+            </div>
+            
+            <div class="cart-items-wrapper" id="cartItems"></div>
+
+            <div class="input-group checkout-address">
+                <label for="deliveryAddress">Delivery Address <span class="required-asterisk">*</span></label>
+                <textarea id="deliveryAddress" rows="3" placeholder="House / flat no, building, street, area, city, PIN code" required></textarea>
+            </div>
+
+            <div class="cart-footer">
+                <div class="bill-row">
+                    <span>Grand Total:</span>
+                    <strong class="total-amount">₹<span id="totalPrice">0</span></strong>
+                </div>
+                <button id="btnPlaceOrder" class="btn-primary full-width" onclick="placeOrder()">Place Order</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= ADD DISH MODAL ================= -->
+    <div id="modalAddDish" class="modal-backdrop" onclick="handleBackdropClick(event, 'modalAddDish')">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3>Add New Food Item</h3>
+                    <p class="text-muted-sm">This dish will immediately become available for customer orders.</p>
+                </div>
+                <button class="close-x" onclick="closeAddDishModal()">&times;</button>
+            </div>
+            <form onsubmit="handleAddNewDish(event)">
+                <div class="input-group">
+                    <label>Dietary Type</label>
+                    <div class="dietary-selector">
+                        <label class="dietary-option">
+                            <input type="radio" name="dishDietary" value="veg" checked>
+                            <span>🟢 Pure Veg</span>
+                        </label>
+                        <label class="dietary-option">
+                            <input type="radio" name="dishDietary" value="non-veg">
+                            <span>🔴 Non-Veg</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Dish Name <span class="required-asterisk">*</span></label>
+                    <input type="text" id="addDishName" placeholder="e.g. Royal Chicken Dum Biryani" required>
+                </div>
+                <div class="input-group">
+                    <label>Category <span class="required-asterisk">*</span></label>
+                    <select id="addDishCategory" required>
+                        <option value="Biryani & Meals">Biryani & Meals</option>
+                        <option value="Pizzas">Pizzas</option>
+                        <option value="Rolls & Snacks">Rolls & Snacks</option>
+                        <option value="Desserts">Desserts</option>
+                        <option value="Brews & Shakes">Brews & Shakes</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Price (₹) <span class="required-asterisk">*</span></label>
+                    <input type="number" id="addDishPrice" placeholder="240" min="1" step="any" required>
+                </div>
+                <div class="input-group">
+                    <label>Photo URL <span style="font-size:11px;color:#64748b;font-weight:normal;">(Optional - category image used if blank)</span></label>
+                    <input type="url" id="addDishImage" placeholder="https://images.unsplash.com/..." oninput="previewModalDishImage(this.value, 'addDishImgPreview')">
+                </div>
+                <div class="image-preview-box">
+                    <img id="addDishImgPreview" src="" alt="Dish Preview" style="width:100%; height:120px; object-fit:cover; border-radius:8px; display:none; margin-bottom:12px;">
+                </div>
+                <div class="input-group">
+                    <label>Chef Description <span class="required-asterisk">*</span></label>
+                    <textarea id="addDishDesc" rows="2" placeholder="Ingredients, spice level, preparation style" required></textarea>
+                </div>
+                <button type="submit" id="btnSubmitAddDish" class="btn-primary full-width">Add Dish to Live Menu</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= EDIT DISH MODAL ================= -->
+    <div id="modalEditDish" class="modal-backdrop" onclick="handleBackdropClick(event, 'modalEditDish')">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3>Edit Food Item</h3>
+                    <p class="text-muted-sm">Update pricing, description, or recipe details.</p>
+                </div>
+                <button class="close-x" onclick="closeEditDishModal()">&times;</button>
+            </div>
+            <form onsubmit="handleSaveEditDish(event)">
+                <input type="hidden" id="editDishId">
+                <div class="input-group">
+                    <label>Dietary Type</label>
+                    <div class="dietary-selector">
+                        <label class="dietary-option">
+                            <input type="radio" name="editDishDietary" value="veg" id="editDishDietaryVeg" checked>
+                            <span>🟢 Pure Veg</span>
+                        </label>
+                        <label class="dietary-option">
+                            <input type="radio" name="editDishDietary" value="non-veg" id="editDishDietaryNonVeg">
+                            <span>🔴 Non-Veg</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Dish Name <span class="required-asterisk">*</span></label>
+                    <input type="text" id="editDishName" required>
+                </div>
+                <div class="input-group">
+                    <label>Category <span class="required-asterisk">*</span></label>
+                    <select id="editDishCategory" required>
+                        <option value="Biryani & Meals">Biryani & Meals</option>
+                        <option value="Pizzas">Pizzas</option>
+                        <option value="Rolls & Snacks">Rolls & Snacks</option>
+                        <option value="Desserts">Desserts</option>
+                        <option value="Brews & Shakes">Brews & Shakes</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Price (₹) <span class="required-asterisk">*</span></label>
+                    <input type="number" id="editDishPrice" min="1" step="any" required>
+                </div>
+                <div class="input-group">
+                    <label>Photo URL <span style="font-size:11px;color:#64748b;font-weight:normal;">(Optional - category image used if blank)</span></label>
+                    <input type="url" id="editDishImage" placeholder="https://images.unsplash.com/..." oninput="previewModalDishImage(this.value, 'editDishImgPreview')">
+                </div>
+                <div class="image-preview-box">
+                    <img id="editDishImgPreview" src="" alt="Dish Preview" style="width:100%; height:120px; object-fit:cover; border-radius:8px; display:none; margin-bottom:12px;">
+                </div>
+                <div class="input-group">
+                    <label>Chef Description <span class="required-asterisk">*</span></label>
+                    <textarea id="editDishDesc" rows="2" required></textarea>
+                </div>
+                <div class="input-group">
+                    <label class="checkbox-label" style="display:flex; align-items:center; gap:8px; font-weight:700; cursor:pointer;">
+                        <input type="checkbox" id="editDishAvailable">
+                        <span>Dish is In Stock & Available for Ordering</span>
+                    </label>
+                </div>
+                <button type="submit" id="btnSubmitEditDish" class="btn-primary full-width">Save Dish Updates</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= PRINT KITCHEN ORDER TICKET (KOT) MODAL ================= -->
+    <div id="modalPrintKot" class="modal-backdrop" onclick="handleBackdropClick(event, 'modalPrintKot')">
+        <div class="modal-box kot-modal-box">
+            <div class="modal-header">
+                <h3>Kitchen Order Ticket (KOT)</h3>
+                <button class="close-x" onclick="closePrintKotModal()">&times;</button>
+            </div>
+            <div id="kotPrintableArea" class="kot-receipt-paper">
+                <div class="kot-header">
+                    <div class="kot-rest-name" id="kotRestaurantName">QuickBite Kitchen</div>
+                    <div class="kot-slip-title">*** KITCHEN ORDER TICKET ***</div>
+                    <div class="kot-meta-row">
+                        <span>ORDER: <strong id="kotOrderNumber">#QB-0000</strong></span>
+                        <span id="kotOrderTime">12:00 PM</span>
+                    </div>
+                    <div class="kot-meta-row">
+                        <span>CUSTOMER: <strong id="kotCustomerName">Customer</strong></span>
+                        <span class="kot-type-pill">DELIVERY</span>
+                    </div>
+                    <div class="kot-meta-row" id="kotCustomerPhoneRow" style="display:none;">
+                        <span>PHONE: <strong id="kotCustomerPhone">-</strong></span>
+                    </div>
+                </div>
+                <div class="kot-divider"></div>
+                <table class="kot-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;">QTY</th>
+                            <th style="text-align:left;">ITEM DESCRIPTION</th>
+                            <th style="text-align:right;">PRICE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kotItemsTbody">
+                        <!-- Items populated dynamically -->
+                    </tbody>
+                </table>
+                <div class="kot-divider"></div>
+                <div class="kot-total-row">
+                    <span>GRAND TOTAL:</span>
+                    <strong id="kotOrderTotal">₹0</strong>
+                </div>
+                <div class="kot-address-box">
+                    <strong>DESTINATION:</strong>
+                    <p id="kotDeliveryAddress">Delivery Address</p>
+                </div>
+                <div class="kot-footer">QuickBite Cloud Kitchen System</div>
+            </div>
+            <div class="kot-actions">
+                <button class="btn-primary full-width" onclick="printKotSlip()">🖨️ Print Kitchen Slip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
