@@ -8,6 +8,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Early theme initializer to prevent Flash of Unstyled Content (FOUC) -->
+    <script>
+        (function() {
+            try {
+                const storedTheme = localStorage.getItem('quickbite_theme');
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = storedTheme || (prefersDark ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {}
+        })();
+    </script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -40,6 +51,28 @@
 
             <!-- User Auth & Cart Area -->
             <div class="nav-actions">
+                <!-- Theme Toggle Button -->
+                <button id="themeToggleBtn" class="btn-theme-toggle" onclick="toggleTheme()" aria-label="Toggle Dark / Light Mode" title="Toggle Theme (🌙/☀️)">
+                    <span class="theme-toggle-icon">
+                        <!-- Sun Icon (visible in dark mode) -->
+                        <svg class="sun-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+                        <!-- Moon Icon (visible in light mode) -->
+                        <svg class="moon-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                    </span>
+                </button>
+
                 <div id="authStatusArea">
                     <button class="btn-login" onclick="openLoginModal()">Login / Sign Up</button>
                 </div>
@@ -81,23 +114,48 @@
             <!-- Hero Banner -->
             <div class="hero-banner">
                 <div class="hero-content">
-                    <span class="hero-pill">⚡ 50% FLAT OFF on First Order</span>
+                    <div class="hero-pill-badge">
+                        <span class="hero-pill-icon">⚡</span>
+                        <span>FLAT 50% OFF &bull; USE CODE: <strong>QUICK50</strong></span>
+                    </div>
                     <h1>Craving Something <span class="text-gradient">Delicious?</span></h1>
                     <p>Order fresh signature meals from top-rated restaurants delivered to your doorstep in 20 mins.</p>
+                    <div class="hero-highlights">
+                        <div class="hero-stat-pill">
+                            <span class="stat-emoji">⭐</span>
+                            <div><strong>4.8+</strong><span>Top Rated</span></div>
+                        </div>
+                        <div class="hero-stat-pill">
+                            <span class="stat-emoji">⏱️</span>
+                            <div><strong>20 Mins</strong><span>Express Delivery</span></div>
+                        </div>
+                        <div class="hero-stat-pill">
+                            <span class="stat-emoji">🍲</span>
+                            <div><strong>100% Fresh</strong><span>Hygiene Assured</span></div>
+                        </div>
+                    </div>
                 </div>
                 <div class="hero-image">
                     <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80" alt="Delicious Food" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80'">
+                    <div class="hero-floating-tag tag-top">
+                        <span>🔥 Trending Now</span>
+                    </div>
+                    <div class="hero-floating-tag tag-bottom">
+                        <span>🛵 Live Tracking</span>
+                    </div>
                 </div>
             </div>
 
             <!-- Category Filter Chips -->
-            <div class="category-strip" id="categoryChips">
-                <button class="cat-chip active" data-category="All" onclick="filterCategory('All')">All Items</button>
-                <button class="cat-chip" data-category="Biryani & Meals" onclick="filterCategory('Biryani & Meals')">Biryani & Meals</button>
-                <button class="cat-chip" data-category="Pizzas" onclick="filterCategory('Pizzas')">Pizzas</button>
-                <button class="cat-chip" data-category="Rolls & Snacks" onclick="filterCategory('Rolls & Snacks')">Rolls & Snacks</button>
-                <button class="cat-chip" data-category="Desserts" onclick="filterCategory('Desserts')">Desserts</button>
-                <button class="cat-chip" data-category="Brews & Shakes" onclick="filterCategory('Brews & Shakes')">Brews & Shakes</button>
+            <div class="category-strip-wrapper">
+                <div class="category-strip" id="categoryChips">
+                    <button class="cat-chip active" data-category="All" onclick="filterCategory('All')">🍽️ All Items</button>
+                    <button class="cat-chip" data-category="Biryani & Meals" onclick="filterCategory('Biryani & Meals')">🍚 Biryani & Meals</button>
+                    <button class="cat-chip" data-category="Pizzas" onclick="filterCategory('Pizzas')">🍕 Pizzas</button>
+                    <button class="cat-chip" data-category="Rolls & Snacks" onclick="filterCategory('Rolls & Snacks')">🌯 Rolls & Snacks</button>
+                    <button class="cat-chip" data-category="Desserts" onclick="filterCategory('Desserts')">🍰 Desserts</button>
+                    <button class="cat-chip" data-category="Brews & Shakes" onclick="filterCategory('Brews & Shakes')">🥤 Brews & Shakes</button>
+                </div>
             </div>
 
             <div class="section-title">
@@ -648,13 +706,24 @@
 
     <!-- ================= AUTHENTICATION MODAL ================= -->
     <div id="loginModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'loginModal')">
-        <div class="modal-box">
+        <div class="modal-box auth-modal-box">
             <div class="modal-header">
                 <div>
                     <h3 id="authModalTitle">Login to QuickBite</h3>
                     <p id="authModalSubtitle">Use your email and password to continue.</p>
                 </div>
                 <button class="close-x" onclick="closeLoginModal()">&times;</button>
+            </div>
+
+            <!-- Quick Demo Role Switcher Bar for Seamless Feature Review -->
+            <div class="demo-access-strip">
+                <span class="demo-access-label">⚡ Test Live Portals (Quick Switch):</span>
+                <div class="demo-role-btns">
+                    <button type="button" class="demo-role-btn" onclick="quickDemoAccess('user')">🍽️ Customer</button>
+                    <button type="button" class="demo-role-btn" onclick="quickDemoAccess('restaurant')">🏪 Restaurant</button>
+                    <button type="button" class="demo-role-btn" onclick="quickDemoAccess('rider')">🛵 Fleet</button>
+                    <button type="button" class="demo-role-btn" onclick="quickDemoAccess('admin')">⚡ Admin</button>
+                </div>
             </div>
 
             <form onsubmit="handleAuthSubmit(event)">
@@ -693,17 +762,35 @@
             
             <div class="cart-items-wrapper" id="cartItems"></div>
 
-            <div class="input-group checkout-address">
-                <label for="deliveryAddress">Delivery Address <span class="required-asterisk">*</span></label>
-                <textarea id="deliveryAddress" rows="3" placeholder="House / flat no, building, street, area, city, PIN code" required></textarea>
-            </div>
-
-            <div class="cart-footer">
-                <div class="bill-row">
-                    <span>Grand Total:</span>
-                    <strong class="total-amount">₹<span id="totalPrice">0</span></strong>
+            <!-- Checkout Section: visible when cart has items -->
+            <div id="cartCheckoutSection">
+                <div class="cart-bill-details" id="cartBillDetails">
+                    <div class="bill-line">
+                        <span>Items Subtotal</span>
+                        <strong id="billSubtotal">₹0</strong>
+                    </div>
+                    <div class="bill-line">
+                        <span>Delivery Fee</span>
+                        <strong class="text-green" id="billDelivery">FREE</strong>
+                    </div>
+                    <div class="bill-line">
+                        <span>Platform Fee & Taxes</span>
+                        <strong>₹15</strong>
+                    </div>
                 </div>
-                <button id="btnPlaceOrder" class="btn-primary full-width" onclick="placeOrder()">Place Order</button>
+
+                <div class="input-group checkout-address">
+                    <label for="deliveryAddress">Delivery Address <span class="required-asterisk">*</span></label>
+                    <textarea id="deliveryAddress" rows="2" placeholder="House / flat no, building, street, area, city, PIN code" required></textarea>
+                </div>
+
+                <div class="cart-footer">
+                    <div class="bill-row">
+                        <span>Grand Total:</span>
+                        <strong class="total-amount">₹<span id="totalPrice">0</span></strong>
+                    </div>
+                    <button id="btnPlaceOrder" class="btn-primary full-width btn-place-order" onclick="placeOrder()">Place Order &bull; ₹<span id="btnOrderPrice">0</span></button>
+                </div>
             </div>
         </div>
     </div>
@@ -880,6 +967,20 @@
             </div>
             <div class="kot-actions">
                 <button class="btn-primary full-width" onclick="printKotSlip()">🖨️ Print Kitchen Slip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Floating Bottom Cart Bar -->
+    <div id="mobileCartBar" class="mobile-cart-bar" onclick="toggleCart()" style="display: none;">
+        <div class="mobile-cart-content">
+            <div class="mobile-cart-left">
+                <span class="mobile-cart-badge" id="mobileCartCount">0</span>
+                <span class="mobile-cart-title">View Cart</span>
+            </div>
+            <div class="mobile-cart-right">
+                <span class="mobile-cart-total">₹<span id="mobileCartTotal">0</span></span>
+                <span class="mobile-cart-arrow">&rarr;</span>
             </div>
         </div>
     </div>

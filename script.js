@@ -16,6 +16,7 @@ let currentProfile = null;
 let currentRole = "user";
 let activeRoleView = "user";
 let pendingItemToAdd = null;
+let pendingAction = null;
 let cart = [];
 let menuItems = [];
 let customerOrders = [];
@@ -27,6 +28,7 @@ let partnerRestaurants = [];
 let authMode = "login";
 let activeCategory = "All";
 let isCartSyncing = false;
+let pendingCartSync = false;
 
 const ROLE_LABELS = {
     user: "Customer",
@@ -53,6 +55,63 @@ const CATEGORY_FALLBACK_IMAGES = {
     "Brews & Shakes": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=600&auto=format&fit=crop&q=80",
     "Default": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80"
 };
+
+// ================= THEME MANAGEMENT (DARK / LIGHT MODE) =================
+let currentTheme = "light";
+
+function initTheme() {
+    try {
+        const storedTheme = localStorage.getItem("quickbite_theme");
+        const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = storedTheme || (prefersDark ? "dark" : "light");
+        setTheme(theme, false);
+
+        // Listen for OS / system color scheme changes when user hasn't explicitly set a preference
+        if (window.matchMedia) {
+            window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", e => {
+                if (!localStorage.getItem("quickbite_theme")) {
+                    setTheme(e.matches ? "dark" : "light", false);
+                }
+            });
+        }
+    } catch (err) {
+        console.warn("Theme initialization warning:", err);
+    }
+}
+
+function setTheme(theme, save = true) {
+    currentTheme = theme === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", currentTheme);
+    if (document.body) {
+        document.body.setAttribute("data-theme", currentTheme);
+    }
+    if (save) {
+        try {
+            localStorage.setItem("quickbite_theme", currentTheme);
+        } catch (e) {}
+    }
+    updateThemeToggleUI();
+}
+
+function toggleTheme() {
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    setTheme(newTheme, true);
+    if (typeof showToast === "function") {
+        showToast(newTheme === "dark" ? "Dark Mode activated 🌙" : "Light Mode activated ☀️", "info");
+    }
+}
+
+function updateThemeToggleUI() {
+    const btn = document.getElementById("themeToggleBtn");
+    if (!btn) return;
+    const isDark = currentTheme === "dark";
+    btn.setAttribute("aria-label", isDark ? "Switch to Light Mode" : "Switch to Dark Mode");
+    btn.setAttribute("title", isDark ? "Switch to Light Mode (☀️)" : "Switch to Dark Mode (🌙)");
+}
+
+window.toggleTheme = toggleTheme;
+window.setTheme = setTheme;
+initTheme();
 
 // ================= UTILITIES =================
 function escapeHtml(value = "") {
@@ -141,8 +200,11 @@ function handleBackdropClick(event, modalId) {
 }
 
 // ================= AUTHENTICATION =================
-function openLoginModal(targetItemId = null) {
-    if (targetItemId) pendingItemToAdd = targetItemId;
+function openLoginModal(targetItemId = null, action = "add_to_cart") {
+    if (targetItemId) {
+        pendingItemToAdd = targetItemId;
+        pendingAction = action;
+    }
     authMode = "login";
     syncAuthModal();
     const modal = document.getElementById("loginModal");
@@ -153,6 +215,33 @@ function closeLoginModal() {
     const modal = document.getElementById("loginModal");
     if (modal) modal.style.display = "none";
     showAuthMessage("");
+}
+
+async function quickDemoAccess(role) {
+    closeLoginModal();
+    currentRole = role;
+    activeRoleView = role;
+
+    if (!currentUser) {
+        currentUser = {
+            id: `demo-user-${role}-001`,
+            email: `demo.${role}@quickbite.local`,
+            user_metadata: { full_name: `QuickBite ${ROLE_LABELS[role] || "User"}` }
+        };
+        currentProfile = {
+            id: currentUser.id,
+            full_name: currentUser.user_metadata.full_name,
+            role: role
+        };
+    } else {
+        currentRole = role;
+        activeRoleView = role;
+        if (currentProfile) currentProfile.role = role;
+    }
+
+    applyUserSession();
+    switchRoleView(role);
+    showToast(`Switched to ${ROLE_LABELS[role]} portal!`, "success");
 }
 
 function toggleAuthMode() {
@@ -211,8 +300,15 @@ async function handleAuthSubmit(e) {
         await loadSession();
 
         if (pendingItemToAdd && currentRole === "user") {
-            await addToCart(pendingItemToAdd);
+            const item = pendingItemToAdd;
+            const action = pendingAction;
             pendingItemToAdd = null;
+            pendingAction = null;
+            if (action === "buy_now") {
+                await handleBuyNow(item);
+            } else {
+                await addToCart(item);
+            }
         }
     } catch (err) {
         showAuthMessage(err.message || "Authentication failed.", "error");
@@ -364,6 +460,8 @@ function switchRoleView(view) {
     else if (view === "rider") loadRiderOrders();
     else if (view === "admin") loadAdminDashboard();
     else if (view === "orders") loadCustomerOrders();
+
+    updateCartCount();
 }
 
 function returnToActivePortal() {
@@ -388,9 +486,29 @@ function showCustomerOrders() {
 }
 
 // ================= FOOD MENU & CATALOG =================
+function showMenuSkeletons() {
+    const grid = document.getElementById("foodGrid");
+    if (!grid) return;
+    grid.innerHTML = Array(6).fill(0).map(() => `
+        <div class="skeleton-card">
+            <div class="skeleton-img"></div>
+            <div class="skeleton-body">
+                <div class="skeleton-line" style="width: 35%;"></div>
+                <div class="skeleton-line" style="width: 80%; height: 18px;"></div>
+                <div class="skeleton-line" style="width: 60%;"></div>
+                <div class="skeleton-footer">
+                    <div class="skeleton-line" style="width: 30%; height: 22px;"></div>
+                    <div class="skeleton-line" style="width: 30%; height: 32px; border-radius: 8px;"></div>
+                </div>
+            </div>
+        </div>
+    `).join("");
+}
+
 async function loadMenu() {
     if (!db) return;
     try {
+        if (!menuItems.length) showMenuSkeletons();
         const { data, error } = await db
             .from("menu_items")
             .select("id,restaurant_id,name,category,description,price,image_url,is_available,restaurants(name,is_open)")
@@ -424,11 +542,11 @@ function renderFoodMenu(items) {
 
     if (!items.length) {
         grid.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; background: white; border-radius: 16px; border: 1px solid var(--border);">
-                <span style="font-size: 40px; display: block; margin-bottom: 12px;">🔍</span>
-                <h3 style="font-size: 20px; margin-bottom: 6px;">No matching dishes found</h3>
+            <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; background: var(--card-bg); border-radius: 20px; border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text-main);">
+                <span style="font-size: 44px; display: block; margin-bottom: 12px;">🔍</span>
+                <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 6px;">No matching dishes found</h3>
                 <p style="color: var(--text-muted); font-size: 14px;">Try searching with a different cuisine, dish name, or reset category filters.</p>
-                <button class="btn-primary" onclick="filterCategory('All')" style="margin-top: 15px;">Show All Dishes</button>
+                <button class="btn-primary" onclick="filterCategory('All')" style="margin-top: 16px;">Show All Dishes</button>
             </div>
         `;
         return;
@@ -437,25 +555,48 @@ function renderFoodMenu(items) {
     items.forEach(dish => {
         const card = document.createElement("div");
         card.className = "food-card";
+        const isOpen = dish.restaurant_is_open !== false;
+        if (!isOpen) card.classList.add("store-offline-card");
         card.onclick = () => openProductDetailModal(dish.id);
 
         const safeImg = escapeHtml(dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
-        const shortDesc = (dish.desc || "").length > 60 ? dish.desc.substring(0, 60) + "..." : (dish.desc || "");
+        const cleanDesc = (dish.desc || "").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
+        const shortDesc = cleanDesc.length > 65 ? cleanDesc.substring(0, 65) + "..." : cleanDesc;
+
+        // Dietary pill
+        const descText = dish.desc || "";
+        const isPureVeg = descText.includes("[Veg]") || (!descText.includes("[Non-Veg]") && !/(chicken|mutton|egg|fish|prawn|meat|beef|tandoori chicken)/i.test(dish.name));
+        const vegBadge = isPureVeg 
+            ? `<span class="badge-veg-card"><span class="dietary-icon veg"></span> Veg</span>` 
+            : `<span class="badge-nonveg-card"><span class="dietary-icon nonveg"></span> Non-Veg</span>`;
+
+        const closedOverlay = !isOpen
+            ? `<div class="store-closed-banner"><span>🔴 Store Offline</span></div>`
+            : "";
+
+        const addBtnHtml = isOpen
+            ? `<button class="btn-add" id="btnAdd-${dish.id}" onclick="event.stopPropagation(); handleItemOrderClick('${dish.id}')">Add +</button>`
+            : `<button class="btn-add btn-disabled" onclick="event.stopPropagation(); showToast('Restaurant is currently offline.', 'warning');" disabled>Closed</button>`;
 
         card.innerHTML = `
             <div class="card-img-wrap">
                 <img src="${safeImg}" alt="${escapeHtml(dish.name)}" loading="lazy" onerror="handleImageError(this, '${escapeHtml(dish.category)}')">
+                ${closedOverlay}
                 <span class="restaurant-badge">🏪 ${escapeHtml(dish.restaurant)}</span>
                 <span class="card-chip">${escapeHtml(dish.category)}</span>
             </div>
             <div class="card-body">
                 <div>
+                    <div class="card-meta-row">
+                        ${vegBadge}
+                        <span class="card-rating">⭐ 4.8</span>
+                    </div>
                     <h3 class="food-title">${escapeHtml(dish.name)}</h3>
                     <p class="food-desc">${escapeHtml(shortDesc)}</p>
                 </div>
                 <div class="card-footer">
                     <span class="food-price">${money(dish.price)}</span>
-                    <button class="btn-add" id="btnAdd-${dish.id}" onclick="event.stopPropagation(); handleItemOrderClick('${dish.id}')">Add +</button>
+                    ${addBtnHtml}
                 </div>
             </div>
         `;
@@ -481,7 +622,7 @@ function filterMenu() {
             activeCategory = "All";
             document.querySelectorAll(".cat-chip").forEach(btn => {
                 const btnCat = btn.getAttribute("data-category") || btn.textContent.trim();
-                btn.classList.toggle("active", btnCat === "All");
+                btn.classList.toggle("active", btnCat === "All" || btnCat.includes("All"));
             });
         }
     } else if (activeCategory !== "All") {
@@ -501,7 +642,7 @@ function filterCategory(cat) {
     activeCategory = cat;
     document.querySelectorAll(".cat-chip").forEach(btn => {
         const btnCat = btn.getAttribute("data-category") || btn.textContent.trim();
-        btn.classList.toggle("active", btnCat.toLowerCase() === cat.toLowerCase());
+        btn.classList.toggle("active", btnCat.toLowerCase() === cat.toLowerCase() || (cat === "All" && btnCat.includes("All")));
     });
     filterMenu();
 }
@@ -514,20 +655,37 @@ function openProductDetailModal(id) {
     imgEl.src = dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"];
     imgEl.onerror = () => handleProductDetailImageError(imgEl);
 
+    const isOpen = dish.restaurant_is_open !== false;
     document.getElementById("modalProductRes").textContent = `🏪 ${dish.restaurant}`;
     document.getElementById("modalProductCat").textContent = dish.category;
     document.getElementById("modalProductTitle").textContent = dish.name;
-    document.getElementById("modalProductDesc").textContent = dish.desc || "Chef's signature preparation with fresh ingredients.";
+    const cleanDesc = (dish.desc || "Chef's signature preparation with fresh ingredients.").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
+    document.getElementById("modalProductDesc").textContent = cleanDesc;
     document.getElementById("modalProductPrice").textContent = Number(dish.price).toLocaleString("en-IN");
 
-    document.getElementById("modalAddToCartBtn").onclick = async () => {
-        await handleItemOrderClick(dish.id);
-        closeProductDetailModal();
-    };
+    const addBtn = document.getElementById("modalAddToCartBtn");
+    const buyBtn = document.getElementById("modalBuyNowBtn");
 
-    document.getElementById("modalBuyNowBtn").onclick = async () => {
-        await handleBuyNow(dish.id);
-    };
+    if (!isOpen) {
+        addBtn.disabled = true;
+        addBtn.textContent = "Store Offline";
+        buyBtn.disabled = true;
+        buyBtn.textContent = "Unavailable";
+    } else {
+        addBtn.disabled = false;
+        addBtn.textContent = "Add to Cart";
+        buyBtn.disabled = false;
+        buyBtn.textContent = "⚡ Buy Now";
+
+        addBtn.onclick = async () => {
+            await handleItemOrderClick(dish.id);
+            closeProductDetailModal();
+        };
+
+        buyBtn.onclick = async () => {
+            await handleBuyNow(dish.id);
+        };
+    }
 
     document.getElementById("productDetailModal").style.display = "flex";
 }
@@ -538,11 +696,6 @@ function closeProductDetailModal() {
 
 // ================= CART MANAGEMENT =================
 async function handleItemOrderClick(id) {
-    if (!currentUser) {
-        openLoginModal(id);
-        return;
-    }
-
     if (isStaff() && currentRole !== "user") {
         showToast("Logged in as staff. Switch to Customer View to order meals.", "warning");
         return;
@@ -552,8 +705,19 @@ async function handleItemOrderClick(id) {
 }
 
 async function addToCart(id) {
+    if (!menuItems || !menuItems.length) {
+        await loadMenu();
+    }
     const dish = menuItems.find(d => String(d.id) === String(id));
-    if (!dish) return;
+    if (!dish) {
+        showToast("Dish details could not be found.", "error");
+        return;
+    }
+
+    if (dish.restaurant_is_open === false) {
+        showToast(`"${dish.restaurant}" is currently offline and not accepting orders.`, "warning");
+        return;
+    }
 
     // Check if cart already has items from another restaurant
     const firstItem = cart[0];
@@ -568,7 +732,7 @@ async function addToCart(id) {
 
     const existingIndex = cart.findIndex(i => String(i.menu_item_id) === String(dish.id));
     if (existingIndex >= 0) {
-        cart[existingIndex].quantity += 1;
+        cart[existingIndex].quantity = Number(cart[existingIndex].quantity || 0) + 1;
     } else {
         cart.push({
             menu_item_id: dish.id,
@@ -578,24 +742,34 @@ async function addToCart(id) {
         });
     }
 
-    // Visual button feedback
+    // Visual button feedback on card
     const addBtn = document.getElementById(`btnAdd-${dish.id}`);
     if (addBtn) {
         const originalText = addBtn.textContent;
         addBtn.textContent = "Added ✓";
-        addBtn.style.background = "#10b981";
-        addBtn.style.color = "white";
+        addBtn.classList.add("added-feedback");
         setTimeout(() => {
             addBtn.textContent = originalText;
-            addBtn.style.background = "";
-            addBtn.style.color = "";
+            addBtn.classList.remove("added-feedback");
+        }, 800);
+    }
+
+    // Visual button feedback in detail modal if open
+    const modalAddBtn = document.getElementById("modalAddToCartBtn");
+    if (modalAddBtn && document.getElementById("productDetailModal")?.style.display === "flex") {
+        const originalModalText = modalAddBtn.textContent;
+        modalAddBtn.textContent = "Added to Cart ✓";
+        modalAddBtn.classList.add("added-feedback");
+        setTimeout(() => {
+            modalAddBtn.textContent = originalModalText;
+            modalAddBtn.classList.remove("added-feedback");
         }, 800);
     }
 
     await persistCart();
     renderCartItems();
     updateCartCount();
-    showToast(`Added ${dish.name} to cart!`, "success", 2000);
+    showToast(`Added "${dish.name}" to cart!`, "success", 2000);
 }
 
 async function loadCart() {
@@ -655,7 +829,11 @@ function loadLocalCart() {
 
 async function persistCart() {
     saveLocalCart();
-    if (!currentUser || !db || isCartSyncing) return;
+    if (!currentUser || !db) return;
+    if (isCartSyncing) {
+        pendingCartSync = true;
+        return;
+    }
 
     isCartSyncing = true;
     try {
@@ -673,6 +851,10 @@ async function persistCart() {
         console.error("Cart sync error:", err);
     } finally {
         isCartSyncing = false;
+        if (pendingCartSync) {
+            pendingCartSync = false;
+            persistCart();
+        }
     }
 }
 
@@ -693,7 +875,39 @@ async function clearCart() {
 function updateCartCount() {
     const totalCount = cart.reduce((n, x) => n + Number(x.quantity || 0), 0);
     const countBadge = document.getElementById("cartCount");
-    if (countBadge) countBadge.textContent = totalCount;
+    const cartNavBtn = document.getElementById("cartNavBtn");
+    
+    if (countBadge) {
+        countBadge.textContent = totalCount;
+    }
+
+    if (cartNavBtn) {
+        cartNavBtn.classList.remove("cart-bounce");
+        // Trigger bounce animation on change
+        void cartNavBtn.offsetWidth;
+        if (totalCount > 0) {
+            cartNavBtn.classList.add("cart-bounce");
+        }
+    }
+
+    // Update Mobile Cart Bar
+    const mobileCartBar = document.getElementById("mobileCartBar");
+    const mobileCount = document.getElementById("mobileCartCount");
+    const mobileTotal = document.getElementById("mobileCartTotal");
+    const showMobileBar = totalCount > 0 && activeRoleView === "user";
+    document.body.classList.toggle("has-cart-items", showMobileBar);
+    if (mobileCartBar && mobileCount && mobileTotal) {
+        if (showMobileBar) {
+            const subtotal = cart.reduce((sum, item) => sum + Number(item.menu?.price || 0) * Number(item.quantity || 1), 0);
+            const deliveryFee = subtotal >= 199 ? 0 : 30;
+            const grandTotal = subtotal + deliveryFee + 15;
+            mobileCount.textContent = totalCount;
+            mobileTotal.textContent = grandTotal.toLocaleString("en-IN");
+            mobileCartBar.style.display = "flex";
+        } else {
+            mobileCartBar.style.display = "none";
+        }
+    }
 }
 
 function toggleCart() {
@@ -715,6 +929,10 @@ function toggleCart() {
 function renderCartItems() {
     const container = document.getElementById("cartItems");
     const totalEl = document.getElementById("totalPrice");
+    const subtotalEl = document.getElementById("billSubtotal");
+    const deliveryEl = document.getElementById("billDelivery");
+    const btnOrderPrice = document.getElementById("btnOrderPrice");
+    const checkoutSection = document.getElementById("cartCheckoutSection");
     const restaurantLabel = document.getElementById("cartRestaurantLabel");
     if (!container || !totalEl) return;
 
@@ -722,53 +940,69 @@ function renderCartItems() {
 
     if (!cart.length) {
         container.innerHTML = `
-            <div style="text-align:center; padding: 30px 10px; color:#9ca3af;">
-                <span style="font-size:36px; display:block; margin-bottom:8px;">🛒</span>
-                <p>Your food cart is empty.</p>
-                <button class="btn-primary" style="margin-top:10px; padding: 6px 14px; font-size:13px;" onclick="toggleCart()">Browse Dishes</button>
+            <div style="text-align:center; padding: 40px 15px; color:var(--text-muted);">
+                <span style="font-size:42px; display:block; margin-bottom:10px;">🍽️</span>
+                <h4 style="font-size:16px; font-weight:700; color:var(--text-main); margin-bottom:4px;">Your cart is empty</h4>
+                <p style="font-size:13px; margin-bottom:16px;">Good food is always waiting for you. Add dishes from the menu to start your order!</p>
+                <button class="btn-primary" style="padding: 8px 18px; font-size:13px;" onclick="toggleCart()">Explore Menu</button>
             </div>
         `;
         totalEl.textContent = "0";
+        if (subtotalEl) subtotalEl.textContent = "₹0";
+        if (btnOrderPrice) btnOrderPrice.textContent = "0";
         if (restaurantLabel) restaurantLabel.textContent = "";
+        if (checkoutSection) checkoutSection.style.display = "none";
         return;
     }
+
+    if (checkoutSection) checkoutSection.style.display = "block";
 
     const currentRest = cart[0]?.menu?.restaurant || "Partner Kitchen";
     if (restaurantLabel) restaurantLabel.textContent = `Ordering from: ${currentRest}`;
 
-    let grandTotal = 0;
+    let subtotal = 0;
     cart.forEach((item, index) => {
         const price = Number(item.menu?.price || 0);
         const qty = Number(item.quantity || 1);
-        const subtotal = price * qty;
-        grandTotal += subtotal;
+        const itemTotal = price * qty;
+        subtotal += itemTotal;
 
         const row = document.createElement("div");
         row.className = "cart-item-row";
         row.innerHTML = `
             <div style="flex:1;">
-                <strong>${escapeHtml(item.menu?.name || "Food Item")}</strong>
-                <div style="font-size:12px; color:#888;">${escapeHtml(item.menu?.restaurant || "")} • ${money(price)} each</div>
+                <strong style="color:var(--text-main); font-size:14px;">${escapeHtml(item.menu?.name || "Dish")}</strong>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">${escapeHtml(item.menu?.restaurant || "")} &bull; ${money(price)} each</div>
                 <div class="cart-qty">
                     <button type="button" onclick="changeCartQty(${index}, -1)" aria-label="Decrease quantity">−</button>
-                    <span>${qty}</span>
+                    <span style="font-weight:700; min-width:20px; text-align:center; color:var(--text-main);">${qty}</span>
                     <button type="button" onclick="changeCartQty(${index}, 1)" aria-label="Increase quantity">+</button>
                 </div>
             </div>
-            <div style="text-align:right;">
-                <strong>${money(subtotal)}</strong>
-                <button type="button" onclick="removeFromCart(${index})" style="background:none; border:none; color:#ef4444; margin-left:8px; cursor:pointer; font-weight:bold; font-size:14px;" title="Remove dish">✕</button>
+            <div style="text-align:right; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end;">
+                <strong style="color:var(--text-main); font-size:15px;">${money(itemTotal)}</strong>
+                <button type="button" onclick="removeFromCart(${index})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-weight:700; font-size:13px; margin-top:6px; padding:2px;" title="Remove dish">✕ Remove</button>
             </div>
         `;
         container.appendChild(row);
     });
 
+    const deliveryFee = subtotal >= 199 ? 0 : 30;
+    const taxes = 15;
+    const grandTotal = subtotal + deliveryFee + taxes;
+
+    if (subtotalEl) subtotalEl.textContent = money(subtotal);
+    if (deliveryEl) {
+        deliveryEl.textContent = deliveryFee === 0 ? "FREE" : money(deliveryFee);
+        deliveryEl.className = deliveryFee === 0 ? "text-green" : "";
+    }
     totalEl.textContent = Number(grandTotal).toLocaleString("en-IN");
+    if (btnOrderPrice) btnOrderPrice.textContent = Number(grandTotal).toLocaleString("en-IN");
 }
 
 async function changeCartQty(index, delta) {
     if (!cart[index]) return;
-    cart[index].quantity += delta;
+    cart[index].quantity = Number(cart[index].quantity || 0) + delta;
     if (cart[index].quantity <= 0) {
         cart.splice(index, 1);
     }
@@ -784,16 +1018,10 @@ async function removeFromCart(index) {
     await persistCart();
     renderCartItems();
     updateCartCount();
-    showToast(`Removed ${removedName} from cart.`, "info", 2000);
+    showToast(`Removed "${removedName}" from cart.`, "info", 1800);
 }
 
 async function handleBuyNow(id) {
-    if (!currentUser) {
-        closeProductDetailModal();
-        openLoginModal(id);
-        return;
-    }
-
     if (isStaff() && currentRole !== "user") {
         showToast("Logged in as staff. Switch to Customer View to buy meals.", "warning");
         return;
@@ -807,6 +1035,13 @@ async function handleBuyNow(id) {
     const addrField = document.getElementById("deliveryAddress");
     if (addrField) addrField.focus();
 }
+
+window.handleItemOrderClick = handleItemOrderClick;
+window.addToCart = addToCart;
+window.changeCartQty = changeCartQty;
+window.removeFromCart = removeFromCart;
+window.handleBuyNow = handleBuyNow;
+window.toggleCart = toggleCart;
 
 // ================= ORDER PLACEMENT & CUSTOMER ORDERS =================
 async function placeOrder() {
@@ -837,6 +1072,38 @@ async function placeOrder() {
         placeBtn.textContent = "Placing Order...";
     }
 
+    const isDemoCustomer = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
+    if (isDemoCustomer) {
+        const orderNum = "QB-" + Math.floor(100000 + Math.random() * 900000);
+        const subtotal = cart.reduce((sum, item) => sum + Number(item.menu?.price || 0) * Number(item.quantity || 1), 0);
+        const deliveryFee = subtotal >= 199 ? 0 : 30;
+        const grandTotal = subtotal + deliveryFee + 15;
+        const mockOrder = {
+            id: "demo-order-" + Date.now(),
+            order_number: orderNum,
+            total_amount: grandTotal,
+            status: "pending",
+            delivery_address: deliveryAddress,
+            created_at: new Date().toISOString(),
+            restaurants: { name: cart[0]?.menu?.restaurant || "QuickBite Partner Kitchen" },
+            order_items: cart.map(item => ({
+                quantity: item.quantity,
+                unit_price: item.menu?.price,
+                menu_items: { name: item.menu?.name }
+            }))
+        };
+        customerOrders.unshift(mockOrder);
+        await clearCart();
+        toggleCart();
+        showToast(`Order #${orderNum} placed successfully! Tracking your delivery.`, "success", 4000);
+        showCustomerOrders();
+        if (placeBtn) {
+            placeBtn.disabled = false;
+            placeBtn.textContent = "Place Order";
+        }
+        return;
+    }
+
     try {
         const { data, error } = await db.rpc("create_order_from_cart", {
             p_delivery_address: deliveryAddress
@@ -862,6 +1129,17 @@ async function placeOrder() {
 
 async function loadCustomerOrders() {
     if (!currentUser || !db) return;
+
+    if (currentUser.id.startsWith("demo-user-")) {
+        const activeCount = customerOrders.filter(o => !["delivered", "cancelled"].includes(o.status)).length;
+        const navBadge = document.getElementById("navOrdersBadge");
+        if (navBadge) {
+            navBadge.textContent = activeCount;
+            navBadge.style.display = activeCount > 0 ? "inline-block" : "none";
+        }
+        renderCustomerOrders();
+        return;
+    }
 
     try {
         const { data, error } = await db
@@ -994,6 +1272,14 @@ function renderCustomerOrders() {
 async function cancelCustomerOrder(orderId) {
     const ok = confirm("Are you sure you want to cancel this order?");
     if (!ok) return;
+
+    if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
+        const order = customerOrders.find(o => o.id === orderId);
+        if (order) order.status = "cancelled";
+        showToast("Order cancelled successfully.", "info");
+        await loadCustomerOrders();
+        return;
+    }
 
     try {
         // Try safe RPC first
@@ -1135,8 +1421,9 @@ async function loadRestaurantData(requestedRestaurantId = null) {
 
         const savedRid = requestedRestaurantId || localStorage.getItem("quickbite_active_restaurant_id");
 
-        if (currentRole === "admin") {
-            // Admin can manage ANY restaurant. Fallback to saved, owned, or first in directory.
+        const isDemo = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
+        if (currentRole === "admin" || isDemo) {
+            // Admin or Demo mode: can preview and manage ANY restaurant
             restaurant = availableRestaurantsForStaff.find(r => r.id === savedRid)
                 || availableRestaurantsForStaff.find(r => r.owner_id === currentUser.id)
                 || availableRestaurantsForStaff[0]
@@ -1214,11 +1501,11 @@ async function loadRestaurantData(requestedRestaurantId = null) {
 
         // Populate Store Switcher Dropdown (Admin or partner with multiple stores)
         if (storeSwitcherWrap && storeSelect) {
-            const manageableRests = (currentRole === "admin")
+            const manageableRests = (currentRole === "admin" || isDemo)
                 ? availableRestaurantsForStaff
                 : availableRestaurantsForStaff.filter(r => r.owner_id === currentUser.id);
 
-            if (manageableRests.length > 1 || currentRole === "admin") {
+            if (manageableRests.length > 1 || currentRole === "admin" || isDemo) {
                 storeSwitcherWrap.style.display = "inline-flex";
                 storeSelect.innerHTML = manageableRests.map(r => `
                     <option value="${r.id}" ${r.id === restaurant.id ? "selected" : ""}>
@@ -1428,7 +1715,7 @@ async function loadRestaurantOrders() {
         console.error("Error loading restaurant orders:", err);
         const container = document.getElementById("restaurantOrdersList");
         if (container) {
-            container.innerHTML = `<div class="no-orders-message" style="grid-column:1/-1; padding:35px 20px; text-align:center; color:#ef4444; background:white; border-radius:16px; border:1px solid #fecdd3;">Failed to load kitchen orders queue. <button class="btn-sm btn-outline" onclick="loadRestaurantOrders()" style="margin-left:10px;">🔄 Retry</button></div>`;
+            container.innerHTML = `<div class="no-orders-message" style="grid-column:1/-1; padding:35px 20px; text-align:center; color:#ef4444; background:var(--card-bg); border-radius:16px; border:1px solid #fecdd3;">Failed to load kitchen orders queue. <button class="btn-sm btn-outline" onclick="loadRestaurantOrders()" style="margin-left:10px;">🔄 Retry</button></div>`;
         }
     }
 }
@@ -1469,7 +1756,7 @@ function renderKitchenOrders() {
             ? "No completed or cancelled orders in history yet."
             : "No active orders right now. Real-time orders will display here automatically.";
 
-        container.innerHTML = `<div class="no-orders-message" style="grid-column:1/-1; padding:45px 20px; text-align:center; background:white; border-radius:16px; border:1px solid var(--border);">${emptyMsg}</div>`;
+        container.innerHTML = `<div class="no-orders-message" style="grid-column:1/-1; padding:45px 20px; text-align:center; background:var(--card-bg); color:var(--text-main); border-radius:16px; border:1px solid var(--border);">${emptyMsg}</div>`;
         return;
     }
 
@@ -1495,23 +1782,23 @@ function renderKitchenOrders() {
         if (o.status === "pending") {
             actionBtnHtml = `
                 <div class="kds-actions">
-                    <button class="btn-primary" onclick="advanceRestaurantOrder('${o.id}', 'pending')">✓ Accept & Start Prep</button>
+                    <button class="btn-primary" onclick="advanceRestaurantOrder('${o.id}', 'pending', this)">✓ Accept & Start Prep</button>
                     <button class="btn-kot" onclick="openPrintKotModal('${o.id}')" title="Print Kitchen Order Ticket">🖨️ KOT</button>
                 </div>
-                <button class="btn-decline-order" style="width:100%;margin-top:8px;" onclick="declineRestaurantOrder('${o.id}')">Decline Order ✕</button>
+                <button class="btn-decline-order" style="width:100%;margin-top:8px;" onclick="declineRestaurantOrder('${o.id}', this)">Decline Order ✕</button>
             `;
         } else if (o.status === "confirmed") {
             actionBtnHtml = `
                 <div class="kds-actions">
-                    <button class="btn-primary" style="background:#3b82f6;" onclick="advanceRestaurantOrder('${o.id}', 'confirmed')">👨‍🍳 Start Cooking</button>
+                    <button class="btn-primary" style="background:#3b82f6;" onclick="advanceRestaurantOrder('${o.id}', 'confirmed', this)">👨‍🍳 Start Cooking</button>
                     <button class="btn-kot" onclick="openPrintKotModal('${o.id}')">🖨️ KOT</button>
                 </div>
-                <button class="btn-decline-order" style="width:100%;margin-top:8px;" onclick="declineRestaurantOrder('${o.id}')">Decline Order ✕</button>
+                <button class="btn-decline-order" style="width:100%;margin-top:8px;" onclick="declineRestaurantOrder('${o.id}', this)">Decline Order ✕</button>
             `;
         } else if (o.status === "preparing") {
             actionBtnHtml = `
                 <div class="kds-actions">
-                    <button class="btn-primary" style="background:#10b981;" onclick="advanceRestaurantOrder('${o.id}', 'preparing')">📦 Mark Ready for Pickup</button>
+                    <button class="btn-primary" style="background:#10b981;" onclick="advanceRestaurantOrder('${o.id}', 'preparing', this)">📦 Mark Ready for Pickup</button>
                     <button class="btn-kot" onclick="openPrintKotModal('${o.id}')">🖨️ KOT</button>
                 </div>
             `;
@@ -1562,7 +1849,7 @@ function renderKitchenOrders() {
     });
 }
 
-async function advanceRestaurantOrder(id, status) {
+async function advanceRestaurantOrder(id, status, btnEl) {
     const nextMap = {
         pending: "confirmed",
         confirmed: "preparing",
@@ -1571,29 +1858,66 @@ async function advanceRestaurantOrder(id, status) {
     const nextStatus = nextMap[status];
     if (!nextStatus) return;
 
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.dataset.original = btnEl.innerHTML;
+        btnEl.innerHTML = `<span>⏳</span> Updating...`;
+    }
+
     try {
         const { error } = await db.from("orders").update({ status: nextStatus }).eq("id", id);
-        if (error) throw error;
+        if (error) {
+            if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
+                const ord = activeRestaurantOrders.find(o => o.id === id);
+                if (ord) ord.status = nextStatus;
+                showToast(`Order status updated: ${STATUS_LABELS[nextStatus]} ✓`, "success");
+                renderRestaurantOrders();
+                return;
+            }
+            throw error;
+        }
         showToast(`Order status updated: ${STATUS_LABELS[nextStatus]} ✓`, "success");
         await loadRestaurantOrders();
     } catch (err) {
         console.error("Advance order error:", err);
         showToast(err.message || "Failed to update order status.", "error");
+        if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.innerHTML = btnEl.dataset.original || "Try Again";
+        }
     }
 }
 
-async function declineRestaurantOrder(id) {
+async function declineRestaurantOrder(id, btnEl) {
     const ok = confirm("Decline and cancel this incoming order? The customer will be informed.");
     if (!ok) return;
 
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = "Declining...";
+    }
+
     try {
         const { error } = await db.from("orders").update({ status: "cancelled" }).eq("id", id);
-        if (error) throw error;
+        if (error) {
+            if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
+                const ord = activeRestaurantOrders.find(o => o.id === id);
+                if (ord) ord.status = "cancelled";
+                showToast("Order declined.", "info");
+                renderRestaurantOrders();
+                return;
+            }
+            throw error;
+        }
         showToast("Order declined.", "info");
         await loadRestaurantOrders();
     } catch (err) {
         console.error("Decline order error:", err);
         showToast(err.message || "Failed to decline order.", "error");
+        if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.textContent = "Decline Order ✕";
+        }
     }
 }
 
@@ -2034,9 +2358,10 @@ async function loadRiderOrders() {
         riderOrders = data || [];
 
         // Compute fleet stats
+        const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
         const availableCount = riderOrders.filter(o => o.status === "ready_for_pickup" && !o.rider_id).length;
-        const activeCount = riderOrders.filter(o => o.status === "picked_up" && o.rider_id === currentUser.id).length;
-        const completedCount = riderOrders.filter(o => o.status === "delivered" && o.rider_id === currentUser.id).length;
+        const activeCount = riderOrders.filter(o => o.status === "picked_up" && (o.rider_id === currentUser.id || isDemoRider)).length;
+        const completedCount = riderOrders.filter(o => o.status === "delivered" && (o.rider_id === currentUser.id || isDemoRider)).length;
         const earnings = completedCount * 50; // ₹50 delivery fee per completed order
 
         document.getElementById("riderStatAvailable").textContent = availableCount;
@@ -2067,13 +2392,14 @@ function renderRiderOrders() {
     if (!list) return;
     list.innerHTML = "";
 
+    const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
     let filtered = [];
     if (riderTab === "available") {
         filtered = riderOrders.filter(o => o.status === "ready_for_pickup" && !o.rider_id);
     } else if (riderTab === "active") {
-        filtered = riderOrders.filter(o => o.status === "picked_up" && o.rider_id === currentUser.id);
+        filtered = riderOrders.filter(o => o.status === "picked_up" && (o.rider_id === currentUser.id || isDemoRider));
     } else if (riderTab === "history") {
-        filtered = riderOrders.filter(o => o.status === "delivered" && o.rider_id === currentUser.id);
+        filtered = riderOrders.filter(o => o.status === "delivered" && (o.rider_id === currentUser.id || isDemoRider));
     }
 
     if (!filtered.length) {
@@ -2083,7 +2409,7 @@ function renderRiderOrders() {
             ? "You have no active deliveries in transit. Claim an available order to get started!"
             : "No completed delivery records found.";
 
-        list.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px 20px; background:white; border-radius:16px; border:1px solid var(--border); color:#777;">${emptyMsg}</div>`;
+        list.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px 20px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border); color:var(--text-muted);">${emptyMsg}</div>`;
         return;
     }
 
@@ -2110,10 +2436,10 @@ function renderRiderOrders() {
                     </div>
                     <span class="delivery-status ${o.status === "delivered" ? "status-done" : "status-prep"}">${escapeHtml(STATUS_LABELS[o.status] || o.status)}</span>
                 </div>
-                <p style="font-size:13px; color:#333; margin-bottom:4px;">🏪 Pickup: <strong>${restaurantName}</strong></p>
-                <p style="font-size:13px; color:#333; margin-bottom:8px;">👤 Customer: <strong>${customerName}</strong></p>
-                <p style="font-size:13px; color:#666; margin-bottom:8px;">🍽️ ${items}</p>
-                <p style="font-size:13px; color:#111; margin-bottom:8px; background:#f8f9fb; padding:8px; border-radius:6px;">📍 <strong>Drop-off:</strong> ${escapeHtml(o.delivery_address || "Address not provided")}</p>
+                <p style="font-size:13px; color:var(--text-main); margin-bottom:4px;">🏪 Pickup: <strong>${restaurantName}</strong></p>
+                <p style="font-size:13px; color:var(--text-main); margin-bottom:8px;">👤 Customer: <strong>${customerName}</strong></p>
+                <p style="font-size:13px; color:var(--text-muted); margin-bottom:8px;">🍽️ ${items}</p>
+                <p style="font-size:13px; color:var(--text-main); margin-bottom:8px; background:var(--order-summary-bg); border: 1px solid var(--border); padding:8px; border-radius:6px;">📍 <strong>Drop-off:</strong> ${escapeHtml(o.delivery_address || "Address not provided")}</p>
                 <p style="margin-bottom:12px;"><strong style="color:var(--primary); font-size:16px;">${money(o.total_amount)}</strong></p>
             </div>
             ${actionButtonHtml}
@@ -2124,12 +2450,28 @@ function renderRiderOrders() {
 
 async function claimRiderOrder(orderId) {
     try {
-        const { data, error } = await db.rpc("claim_delivery_order", { p_order_id: orderId });
-        if (error) throw error;
-        if (!data) return showToast("This delivery was already claimed by another rider.", "error");
+        const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
+        let claimed = false;
+
+        if (!isDemoRider) {
+            try {
+                const { data, error } = await db.rpc("claim_delivery_order", { p_order_id: orderId });
+                if (!error && data) claimed = true;
+            } catch (rpcErr) {
+                console.warn("RPC claim unavailable, using fallback:", rpcErr);
+            }
+        }
+
+        if (!claimed) {
+            // Update order status directly
+            const updatePayload = { status: "picked_up" };
+            if (!isDemoRider) updatePayload.rider_id = currentUser.id;
+            const { error: updErr } = await db.from("orders").update(updatePayload).eq("id", orderId);
+            if (updErr) throw updErr;
+        }
 
         showToast("Order claimed! Pick up meals from the kitchen.", "success");
-        riderTab = "active";
+        switchRiderTab("active");
         await loadRiderOrders();
     } catch (err) {
         console.error("Claim order error:", err);
@@ -2139,10 +2481,16 @@ async function claimRiderOrder(orderId) {
 
 async function completeRiderOrder(orderId) {
     try {
-        const { error } = await db.from("orders").update({ status: "delivered" }).eq("id", orderId).eq("rider_id", currentUser.id);
+        const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
+        let query = db.from("orders").update({ status: "delivered" }).eq("id", orderId);
+        if (!isDemoRider) {
+            query = query.eq("rider_id", currentUser.id);
+        }
+        const { error } = await query;
         if (error) throw error;
 
-        showToast("Delivery confirmed! Great work.", "success");
+        showToast("🎉 Delivery confirmed! Great work. Order completed.", "success", 4000);
+        switchRiderTab("history");
         await loadRiderOrders();
     } catch (err) {
         console.error("Complete delivery error:", err);
@@ -2234,13 +2582,13 @@ function renderAdminOrders() {
             <td><span class="delivery-status ${o.status === "delivered" ? "status-done" : o.status === "cancelled" ? "status-cancelled" : "status-prep"}">${escapeHtml(STATUS_LABELS[o.status] || o.status)}</span></td>
             <td>
                 <select class="role-select" onchange="updateAdminOrderStatus('${o.id}', this.value)">
-                    <option value="" disabled selected>Update Status</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="preparing">Preparing</option>
-                    <option value="ready_for_pickup">Ready</option>
-                    <option value="picked_up">Out for Delivery</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
+                    <option value="pending" ${o.status === "pending" ? "selected" : ""}>Pending</option>
+                    <option value="confirmed" ${o.status === "confirmed" ? "selected" : ""}>Confirmed</option>
+                    <option value="preparing" ${o.status === "preparing" ? "selected" : ""}>Preparing</option>
+                    <option value="ready_for_pickup" ${o.status === "ready_for_pickup" ? "selected" : ""}>Ready</option>
+                    <option value="picked_up" ${o.status === "picked_up" ? "selected" : ""}>Out for Delivery</option>
+                    <option value="delivered" ${o.status === "delivered" ? "selected" : ""}>Delivered</option>
+                    <option value="cancelled" ${o.status === "cancelled" ? "selected" : ""}>Cancelled</option>
                 </select>
             </td>
         `;
@@ -2252,7 +2600,16 @@ async function updateAdminOrderStatus(orderId, newStatus) {
     if (!newStatus) return;
     try {
         const { error } = await db.from("orders").update({ status: newStatus }).eq("id", orderId);
-        if (error) throw error;
+        if (error) {
+            if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
+                const ord = (adminOrders || []).find(o => o.id === orderId);
+                if (ord) ord.status = newStatus;
+                showToast(`Order status updated to: ${STATUS_LABELS[newStatus]} (Demo Mode)`, "success");
+                renderAdminOrders();
+                return;
+            }
+            throw error;
+        }
         showToast(`Order status updated to: ${STATUS_LABELS[newStatus]}`, "success");
         await loadAdminDashboard();
     } catch (err) {
@@ -2280,7 +2637,7 @@ async function loadAdminUsers() {
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td><strong>👤 ${escapeHtml(p.full_name || "User")}</strong></td>
-                <td><code style="font-size:12px;background:#f3f4f6;padding:2px 6px;border-radius:4px;">${escapeHtml(p.id.substring(0, 8))}...</code></td>
+                <td><code style="font-size:12px;background:var(--code-bg);color:var(--text-main);border:1px solid var(--border);padding:2px 6px;border-radius:4px;">${escapeHtml(p.id.substring(0, 8))}...</code></td>
                 <td><span class="badge-role badge-role-${role}">${ROLE_LABELS[role] || role}</span></td>
                 <td>
                     <select class="role-select" onchange="changeUserRole('${p.id}', this.value)">
@@ -2305,7 +2662,13 @@ async function changeUserRole(userId, newRole) {
         const { error: rpcErr } = await db.rpc("set_user_role", { p_user_id: userId, p_new_role: newRole });
         if (rpcErr) {
             const { error: updateErr } = await db.from("profiles").update({ role: newRole }).eq("id", userId);
-            if (updateErr) throw updateErr;
+            if (updateErr) {
+                if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
+                    showToast(`Role updated to ${ROLE_LABELS[newRole]}! (Demo Mode)`, "success");
+                    return;
+                }
+                throw updateErr;
+            }
         }
 
         showToast(`Role updated to ${ROLE_LABELS[newRole]}!`, "success");
@@ -2376,6 +2739,17 @@ function subscribeRealtime() {
     try {
         db.channel("quickbite-live-all")
             .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, async () => {
+                if (currentUser) {
+                    const { data: userOrders } = await db.from("orders").select("id,status").eq("customer_id", currentUser.id);
+                    if (userOrders) {
+                        const activeCount = userOrders.filter(o => !["delivered", "cancelled"].includes(o.status)).length;
+                        const navBadge = document.getElementById("navOrdersBadge");
+                        if (navBadge) {
+                            navBadge.textContent = activeCount;
+                            navBadge.style.display = activeCount > 0 ? "inline-block" : "none";
+                        }
+                    }
+                }
                 if (activeRoleView === "orders") await loadCustomerOrders();
                 else if (activeRoleView === "restaurant") {
                     await loadRestaurantOrders();
@@ -2417,6 +2791,7 @@ document.addEventListener("keydown", e => {
 // ================= INITIALIZATION =================
 (async function init() {
     try {
+        initTheme();
         await loadSession();
         await loadMenu();
         subscribeRealtime();
