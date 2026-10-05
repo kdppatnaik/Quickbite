@@ -146,15 +146,43 @@
                 </div>
             </div>
 
-            <!-- Category Filter Chips -->
-            <div class="category-strip-wrapper">
-                <div class="category-strip" id="categoryChips">
-                    <button class="cat-chip active" data-category="All" onclick="filterCategory('All')">🍽️ All Items</button>
-                    <button class="cat-chip" data-category="Biryani & Meals" onclick="filterCategory('Biryani & Meals')">🍚 Biryani & Meals</button>
-                    <button class="cat-chip" data-category="Pizzas" onclick="filterCategory('Pizzas')">🍕 Pizzas</button>
-                    <button class="cat-chip" data-category="Rolls & Snacks" onclick="filterCategory('Rolls & Snacks')">🌯 Rolls & Snacks</button>
-                    <button class="cat-chip" data-category="Desserts" onclick="filterCategory('Desserts')">🍰 Desserts</button>
-                    <button class="cat-chip" data-category="Brews & Shakes" onclick="filterCategory('Brews & Shakes')">🥤 Brews & Shakes</button>
+            <!-- Category Filter Chips & Dietary Toggle Bar -->
+            <div class="menu-filter-toolbar">
+                <div class="category-strip-wrapper">
+                    <div class="category-strip" id="categoryChips">
+                        <button class="cat-chip active" data-category="All" onclick="filterCategory('All')">🍽️ All Items</button>
+                        <button class="cat-chip" data-category="Biryani & Meals" onclick="filterCategory('Biryani & Meals')">🍚 Biryani & Meals</button>
+                        <button class="cat-chip" data-category="Pizzas" onclick="filterCategory('Pizzas')">🍕 Pizzas</button>
+                        <button class="cat-chip" data-category="Rolls & Snacks" onclick="filterCategory('Rolls & Snacks')">🌯 Rolls & Snacks</button>
+                        <button class="cat-chip" data-category="Desserts" onclick="filterCategory('Desserts')">🍰 Desserts</button>
+                        <button class="cat-chip" data-category="Brews & Shakes" onclick="filterCategory('Brews & Shakes')">🥤 Brews & Shakes</button>
+                    </div>
+                </div>
+
+                <!-- Dietary Toggle Control: Veg & Non-Veg -->
+                <div class="dietary-filter-wrapper">
+                    <!-- Segmented Buttons: All / Veg / Non-Veg -->
+                    <div class="dietary-segmented-group" role="group" aria-label="Dietary Selection">
+                        <button id="dietBtnAll" class="dietary-pill-btn active" onclick="setDietaryFilter('all')" title="Show All Dishes">
+                            <span>All</span>
+                        </button>
+                        <button id="dietBtnVeg" class="dietary-pill-btn veg-pill" onclick="setDietaryFilter('veg')" title="Show Pure Veg Only">
+                            <span class="dietary-icon veg"></span>
+                            <span>Pure Veg</span>
+                        </button>
+                        <button id="dietBtnNonveg" class="dietary-pill-btn nonveg-pill" onclick="setDietaryFilter('nonveg')" title="Show Non-Veg Only">
+                            <span class="dietary-icon nonveg"></span>
+                            <span>Non-Veg</span>
+                        </button>
+                    </div>
+
+                    <!-- Modern Veg-Only Switch Toggle -->
+                    <div class="veg-switch-toggle" id="vegSwitchToggleBtn" onclick="toggleVegOnlySwitch()" role="switch" aria-checked="false" tabindex="0" title="Toggle Pure Veg Only">
+                        <span class="veg-switch-track">
+                            <span class="veg-switch-knob"></span>
+                        </span>
+                        <span class="veg-switch-text"><span class="dietary-icon veg"></span> Veg Only</span>
+                    </div>
                 </div>
             </div>
 
@@ -673,6 +701,313 @@
             </div>
         </section>
 
+        <!-- ================= 6. FULL PAGE: BUY AN ORDER (PRODUCT DETAIL, REVIEWS & OTHER RESTAURANT SUGGESTIONS) ================= -->
+        <section id="buyOrderSection" class="role-view">
+            <!-- Header bar with Back button, Breadcrumbs & Live ETA -->
+            <div class="buy-page-header">
+                <button class="buy-back-btn" onclick="closeBuyOrderPage()">
+                    <span class="back-arrow">←</span>
+                    <span>Back to Menu</span>
+                </button>
+                <div class="buy-breadcrumbs">
+                    <span class="bc-crumb" onclick="closeBuyOrderPage()">Menu</span>
+                    <span class="bc-sep">/</span>
+                    <span class="bc-crumb" id="buyBcCategory">Category</span>
+                    <span class="bc-sep">/</span>
+                    <span class="bc-crumb" id="buyBcRestaurant">Restaurant</span>
+                    <span class="bc-sep">/</span>
+                    <span class="bc-current" id="buyBcTitle">Dish Name</span>
+                </div>
+                <div class="buy-header-tags">
+                    <span class="buy-eta-tag">⚡ Express Delivery: <strong>20-25 mins</strong></span>
+                </div>
+            </div>
+
+            <!-- Main Dish Showcase & Ordering Container -->
+            <div class="buy-main-container">
+                <div class="buy-hero-grid">
+                    
+                    <!-- Left Column: Dish Media & Badges & Highlights -->
+                    <div class="buy-visual-col">
+                        <div class="buy-img-card">
+                            <img id="buyDishImage" src="" alt="Dish Image" onerror="handleImageError(this, 'Default')">
+                            <div class="buy-img-overlay-top">
+                                <span id="buyDietaryBadge" class="badge-veg-card">
+                                    <span class="dietary-icon veg"></span> Veg
+                                </span>
+                                <span id="buyCategoryBadge" class="buy-chip">Category</span>
+                            </div>
+                            <div class="buy-img-overlay-bottom">
+                                <span class="buy-res-pill" id="buyRestaurantBadge">🏪 Restaurant</span>
+                                <span class="buy-store-status" id="buyStoreStatusPill">🟢 Kitchen Online</span>
+                            </div>
+                        </div>
+
+                        <!-- Restaurant Partner Profile Box -->
+                        <div class="buy-restaurant-card card">
+                            <div class="buy-rest-header">
+                                <div class="buy-rest-avatar">🏪</div>
+                                <div>
+                                    <h4 id="buyRestCardName">Restaurant Name</h4>
+                                    <p class="text-muted-sm" id="buyRestCardCategory">Top Rated Food Hub Partner</p>
+                                </div>
+                            </div>
+                            <div class="buy-rest-badges">
+                                <span class="buy-rest-badge">⭐ 4.8 Rating (350+ reviews)</span>
+                                <span class="buy-rest-badge">⏱️ ~15-20 min prep</span>
+                                <span class="buy-rest-badge">🛡️ FSSAI Hygiene Assured</span>
+                            </div>
+                        </div>
+
+                        <!-- Trust Guarantees -->
+                        <div class="buy-trust-grid">
+                            <div class="trust-item">
+                                <span class="trust-icon">🍲</span>
+                                <div>
+                                    <strong>Freshly Prepared</strong>
+                                    <p>Made fresh to order with authentic spices</p>
+                                </div>
+                            </div>
+                            <div class="trust-item">
+                                <span class="trust-icon">📦</span>
+                                <div>
+                                    <strong>Tamper-Proof Box</strong>
+                                    <p>Sealed hot packaging for freshness</p>
+                                </div>
+                            </div>
+                            <div class="trust-item">
+                                <span class="trust-icon">🛵</span>
+                                <div>
+                                    <strong>Contactless Delivery</strong>
+                                    <p>Delivered safely right to your door</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Details, Pricing, Quantity & In-Page Buy Form -->
+                    <div class="buy-details-col card">
+                        <div class="buy-title-row">
+                            <div>
+                                <span class="buy-subheading" id="buyDishSubtitle">Chef's Signature Preparation</span>
+                                <h1 class="buy-dish-title" id="buyDishTitle">Delicious Dish</h1>
+                            </div>
+                            <div class="buy-rating-pill">
+                                <span>⭐</span>
+                                <strong id="buyDishRating">4.8</strong>
+                                <span class="buy-review-count" id="buyDishReviewCountHead">(240+ reviews)</span>
+                            </div>
+                        </div>
+
+                        <p class="buy-dish-desc" id="buyDishDesc">Description...</p>
+
+                        <div class="buy-meta-row">
+                            <span class="buy-meta-tag">🍽️ Portion: <strong>Serves 1-2</strong></span>
+                            <span class="buy-meta-tag">🔥 Spice: <strong>Balanced</strong></span>
+                            <span class="buy-meta-tag">🌿 100% Hygiene Assured</span>
+                        </div>
+
+                        <div class="buy-price-row">
+                            <div class="buy-price-group">
+                                <span class="buy-currency">₹</span>
+                                <span class="buy-price-val" id="buyDishPrice">0</span>
+                                <span class="buy-original-price" id="buyDishOriginalPrice">₹0</span>
+                                <span class="buy-discount-badge">25% OFF</span>
+                            </div>
+                            <div class="buy-qty-control">
+                                <label class="buy-qty-label">Quantity:</label>
+                                <div class="qty-stepper">
+                                    <button type="button" class="btn-qty" onclick="changeBuyPageQty(-1)" aria-label="Decrease quantity">-</button>
+                                    <span id="buyQtyDisplay" class="qty-val">1</span>
+                                    <button type="button" class="btn-qty" onclick="changeBuyPageQty(1)" aria-label="Increase quantity">+</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cooking / Special Requests -->
+                        <div class="buy-notes-wrap">
+                            <label for="buySpecialNotes">👨‍🍳 Cooking Instructions / Preferences:</label>
+                            <input type="text" id="buySpecialNotes" placeholder="e.g., Less spicy, no onions, extra green chutney, cutlery please...">
+                        </div>
+
+                        <!-- Direct In-Page Buy & Order Checkout Card -->
+                        <div class="buy-checkout-card">
+                            <div class="buy-checkout-title">
+                                <span>⚡ Express Order Checkout</span>
+                                <span class="instant-pill">Instant Order</span>
+                            </div>
+
+                            <!-- Bill breakdown -->
+                            <div class="buy-bill-breakdown">
+                                <div class="bill-line">
+                                    <span id="buyBillItemLabel">Item Total (1x)</span>
+                                    <span id="buyBillItemTotal">₹0</span>
+                                </div>
+                                <div class="bill-line">
+                                    <span>Delivery Partner Fee</span>
+                                    <span id="buyBillDeliveryFee" class="text-success">FREE</span>
+                                </div>
+                                <div class="bill-line">
+                                    <span>Platform & Packaging Fee</span>
+                                    <span>₹15</span>
+                                </div>
+                                <div class="bill-line bill-total">
+                                    <strong>Total Amount to Pay</strong>
+                                    <strong id="buyBillGrandTotal">₹0</strong>
+                                </div>
+                            </div>
+
+                            <!-- Address Input -->
+                            <div class="buy-address-group">
+                                <div class="address-header-row">
+                                    <label for="buyDeliveryAddress">📍 Delivery Address:</label>
+                                    <button type="button" class="btn-link-action" onclick="useCurrentLocationAddress()">Quick Auto-fill</button>
+                                </div>
+                                <textarea id="buyDeliveryAddress" rows="2" placeholder="House/Flat No., Apartment, Street, Landmark..."></textarea>
+                            </div>
+
+                            <!-- Payment Options -->
+                            <div class="buy-payment-group">
+                                <label>💳 Choose Payment Method:</label>
+                                <div class="payment-options-grid">
+                                    <label class="pay-option active">
+                                        <input type="radio" name="buyPaymentMethod" value="cod" checked onchange="updatePayOptionStyle(this)">
+                                        <span class="pay-radio-custom"></span>
+                                        <span class="pay-label">💵 Cash on Delivery</span>
+                                    </label>
+                                    <label class="pay-option">
+                                        <input type="radio" name="buyPaymentMethod" value="upi" onchange="updatePayOptionStyle(this)">
+                                        <span class="pay-radio-custom"></span>
+                                        <span class="pay-label">📱 UPI / GPay / PhonePe</span>
+                                    </label>
+                                    <label class="pay-option">
+                                        <input type="radio" name="buyPaymentMethod" value="card" onchange="updatePayOptionStyle(this)">
+                                        <span class="pay-radio-custom"></span>
+                                        <span class="pay-label">💳 Card / Net Banking</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Action CTA Buttons -->
+                            <div class="buy-actions-cta">
+                                <button id="btnBuyPlaceOrder" class="btn-buy-order-now" onclick="placeOrderFromBuyPage()">
+                                    <span>⚡ Buy & Confirm Order</span>
+                                    <span id="buyBtnPrice">₹0</span>
+                                </button>
+                                <button id="btnBuyAddToCart" class="btn-buy-cart-add" onclick="addToCartFromBuyPage()">
+                                    <span>🛒 Add to Cart</span>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- ================= SECTION: CUSTOMER REVIEWS ================= -->
+                <div class="buy-reviews-section card">
+                    <div class="reviews-section-header">
+                        <div>
+                            <h2>⭐ Customer Ratings & Reviews</h2>
+                            <p class="section-subtitle">Real experiences and feedback from diners who ordered this dish.</p>
+                        </div>
+                        <button class="btn-outline-action" onclick="scrollToReviewForm()">✍️ Write a Review</button>
+                    </div>
+
+                    <div class="reviews-summary-grid">
+                        <div class="rating-score-box">
+                            <div class="score-large" id="buyRatingScore">4.8</div>
+                            <div class="score-stars">⭐⭐⭐⭐⭐</div>
+                            <p class="score-caption" id="buyTotalReviewsCount">Based on 248 verified customer orders</p>
+                            <span class="recommend-pill">👍 98% Recommend this dish</span>
+                        </div>
+
+                        <div class="rating-bars-box">
+                            <div class="rating-bar-row">
+                                <span>5 ★</span>
+                                <div class="bar-track"><div class="bar-fill" style="width: 85%;"></div></div>
+                                <span>85%</span>
+                            </div>
+                            <div class="rating-bar-row">
+                                <span>4 ★</span>
+                                <div class="bar-track"><div class="bar-fill" style="width: 11%;"></div></div>
+                                <span>11%</span>
+                            </div>
+                            <div class="rating-bar-row">
+                                <span>3 ★</span>
+                                <div class="bar-track"><div class="bar-fill" style="width: 3%;"></div></div>
+                                <span>3%</span>
+                            </div>
+                            <div class="rating-bar-row">
+                                <span>2 ★</span>
+                                <div class="bar-track"><div class="bar-fill" style="width: 1%;"></div></div>
+                                <span>1%</span>
+                            </div>
+                            <div class="rating-bar-row">
+                                <span>1 ★</span>
+                                <div class="bar-track"><div class="bar-fill" style="width: 0%;"></div></div>
+                                <span>0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Add Review Form -->
+                    <div class="add-review-box" id="addReviewFormContainer">
+                        <h3>Leave Your Review</h3>
+                        <p class="text-muted-sm">Share your experience with taste, spice balance, packaging, and delivery.</p>
+                        <form id="dishReviewForm" onsubmit="submitDishReview(event)">
+                            <div class="review-stars-picker">
+                                <span>Your Rating:</span>
+                                <div class="star-rating-inputs" id="starRatingInputs">
+                                    <button type="button" class="star-btn" data-star="1" onclick="setReviewStarRating(1)">★</button>
+                                    <button type="button" class="star-btn" data-star="2" onclick="setReviewStarRating(2)">★</button>
+                                    <button type="button" class="star-btn" data-star="3" onclick="setReviewStarRating(3)">★</button>
+                                    <button type="button" class="star-btn" data-star="4" onclick="setReviewStarRating(4)">★</button>
+                                    <button type="button" class="star-btn active" data-star="5" onclick="setReviewStarRating(5)">★</button>
+                                </div>
+                                <span id="starRatingText" class="star-text-label">5.0 - Excellent!</span>
+                            </div>
+
+                            <div class="review-form-fields">
+                                <div class="input-group">
+                                    <label for="reviewAuthorName">Your Name</label>
+                                    <input type="text" id="reviewAuthorName" placeholder="e.g. Ananya Roy" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="reviewComment">Your Feedback</label>
+                                    <textarea id="reviewComment" rows="3" placeholder="What did you love about this dish? (Taste, warmth, packaging...)" required></textarea>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary" id="btnSubmitReview">Post Review</button>
+                        </form>
+                    </div>
+
+                    <!-- Reviews List Feed -->
+                    <div class="reviews-feed-header">
+                        <h4>Verified Diner Reviews (<span id="feedReviewsCount">0</span>)</h4>
+                    </div>
+                    <div class="reviews-list-container" id="dishReviewsList">
+                        <!-- Reviews rendered dynamically -->
+                    </div>
+                </div>
+
+                <!-- ================= SECTION: OTHER RESTAURANT FOOD SUGGESTIONS ================= -->
+                <div class="buy-suggestions-section">
+                    <div class="suggestions-header">
+                        <div>
+                            <h2>🍽️ Craving More? Top Dishes from Other Partner Restaurants</h2>
+                            <p class="section-subtitle">Discover signature culinary creations from other top-rated partner kitchens in your city.</p>
+                        </div>
+                        <span class="tag-badge" id="suggestionsCountBadge">Explore more</span>
+                    </div>
+
+                    <div class="suggestions-grid" id="otherRestaurantSuggestionsGrid">
+                        <!-- Food suggestions from different restaurants rendered dynamically -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
     </main>
 
     <!-- ================= PRODUCT DETAILS & BUY NOW MODAL ================= -->
@@ -699,6 +1034,7 @@
                         <button class="btn-outline-action" id="modalAddToCartBtn">Add to Cart</button>
                         <button class="btn-primary-action" id="modalBuyNowBtn">⚡ Buy Now</button>
                     </div>
+                    <button class="btn-primary full-width" style="margin-top:12px; font-size:13px;" id="modalOpenFullBuyPageBtn" onclick="switchToBuyPageFromModal()">🌟 Open Full Order Page (Reviews & Suggestions) &rarr;</button>
                 </div>
             </div>
         </div>

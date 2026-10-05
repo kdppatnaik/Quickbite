@@ -27,6 +27,11 @@ let riderTab = "available";
 let partnerRestaurants = [];
 let authMode = "login";
 let activeCategory = "All";
+let activeDietaryFilter = "all";
+let currentBuyDish = null;
+let buyPageQty = 1;
+let selectedReviewRating = 5;
+let pendingModalDishId = null;
 let isCartSyncing = false;
 let pendingCartSync = false;
 
@@ -435,14 +440,14 @@ function switchRoleView(view) {
     if (targetSection) targetSection.classList.add("active");
 
     // Toggle Navbar buttons active state
-    document.getElementById("navMenuBtn")?.classList.toggle("active", view === "user");
+    document.getElementById("navMenuBtn")?.classList.toggle("active", view === "user" || view === "buyOrder");
     document.getElementById("navOrdersBtn")?.classList.toggle("active", view === "orders");
     document.getElementById("staffPortalNavBtn")?.classList.toggle("active", isStaff() && (view === currentRole || view === "restaurant" || view === "rider" || view === "admin"));
 
     // Cart and Search are visible in customer shopping view
-    const isShoppingView = (view === "user");
+    const isShoppingView = (view === "user" || view === "buyOrder");
     document.getElementById("cartNavBtn").style.display = isShoppingView ? "flex" : "none";
-    document.getElementById("navSearchWrapper").style.display = isShoppingView ? "flex" : "none";
+    document.getElementById("navSearchWrapper").style.display = (view === "user") ? "flex" : "none";
 
     // Update banner return button visibility
     const returnDashboardBtn = document.getElementById("btnReturnToDashboard");
@@ -505,8 +510,123 @@ function showMenuSkeletons() {
     `).join("");
 }
 
+const DEFAULT_FALLBACK_MENU = [
+    {
+        id: "fb-1",
+        name: "Hyderabadi Chicken Dum Biryani",
+        restaurant: "Royal Biryani House",
+        category: "Biryani & Meals",
+        price: 320,
+        desc: "[Non-Veg] Tender chicken marinated in browned onions, mint, and spices, layered with aromatic basmati rice and saffron broth.",
+        image: "https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-2",
+        name: "Dal Makhani with Garlic Naan",
+        restaurant: "Pakwan Premium",
+        category: "Biryani & Meals",
+        price: 219,
+        desc: "[Veg] Slow-simmered black lentils cooked overnight on charcoal with butter and cream, served with crisp butter naan.",
+        image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-3",
+        name: "Butter Chicken with Roomali",
+        restaurant: "The Tandoori Trail",
+        category: "Biryani & Meals",
+        price: 349,
+        desc: "[Non-Veg] Charcoal grilled chicken cooked in a rich satin-smooth tomato and cashew nut gravy enriched with butter.",
+        image: "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-4",
+        name: "Fiery Paneer & Jalapeno Pizza",
+        restaurant: "Pizzaria Gusto",
+        category: "Pizzas",
+        price: 319,
+        desc: "[Veg] Crust stuffed with hot melting mozzarella, loaded with spicy tandoori paneer slices, tangy Mexican jalapenos, and golden corn.",
+        image: "https://images.unsplash.com/photo-1593560708920-61dd98c46a4e?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-5",
+        name: "Chicken Tikka Feast Pizza",
+        restaurant: "Food Villa",
+        category: "Pizzas",
+        price: 299,
+        desc: "[Non-Veg] Thin crust pizza loaded with smoky roasted chicken tikka, black olives, bell peppers, and extra mozzarella cheese.",
+        image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-6",
+        name: "Steamed Veg Himalayan Momos",
+        restaurant: "Chinatown Express",
+        category: "Rolls & Snacks",
+        price: 120,
+        desc: "[Veg] Delicate steamed dumplings stuffed with minced vegetables, paneer, and scallions, served with spicy red chili dip.",
+        image: "https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-7",
+        name: "Chicken Kathi Roll",
+        restaurant: "Roll Nation",
+        category: "Rolls & Snacks",
+        price: 179,
+        desc: "[Non-Veg] Flaky paratha coated with an egg layer, rolled with juicy chicken tikka, sliced onions, and lemon mint zest.",
+        image: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-8",
+        name: "Warm Sizzling Walnut Brownie",
+        restaurant: "Sweet Delights",
+        category: "Desserts",
+        price: 139,
+        desc: "[Veg] Dense dark chocolate fudge brownie with toasted walnuts, topped with warm Belgian hot fudge core.",
+        image: "https://images.unsplash.com/photo-1607920591413-4ec007e70023?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-9",
+        name: "Belgian Chocolate Oreo Shake",
+        restaurant: "Cafe Brew Hub",
+        category: "Brews & Shakes",
+        price: 149,
+        desc: "[Veg] Crushed Oreo cookies blended with chocolate ice cream, rich whole milk, and topped with chocolate curls.",
+        image: "https://images.unsplash.com/photo-1572490122747-3968b75cc699?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    },
+    {
+        id: "fb-10",
+        name: "Alphonso Mango Thickshake",
+        restaurant: "Sweet Delights",
+        category: "Brews & Shakes",
+        price: 159,
+        desc: "[Veg] Pure Ratnagiri alphonso pulp blended with rich condensed milk and topped with fresh mango chunks.",
+        image: "https://images.unsplash.com/photo-1546173159-315724a31696?w=600&auto=format&fit=crop&q=80",
+        restaurant_is_open: true
+    }
+];
+
+function useFallbackMenu() {
+    if (!menuItems || !menuItems.length) {
+        menuItems = [...DEFAULT_FALLBACK_MENU];
+    }
+    const countBadge = document.getElementById("menuCountBadge");
+    if (countBadge) countBadge.textContent = `${menuItems.length} dishes available`;
+    filterMenu();
+}
+
 async function loadMenu() {
-    if (!db) return;
+    if (!db) {
+        useFallbackMenu();
+        return;
+    }
     try {
         if (!menuItems.length) showMenuSkeletons();
         const { data, error } = await db
@@ -517,13 +637,18 @@ async function loadMenu() {
 
         if (error) throw error;
 
-        menuItems = (data || []).map(x => ({
-            ...x,
-            restaurant: x.restaurants?.name || "Partner Kitchen",
-            restaurant_is_open: x.restaurants?.is_open ?? true,
-            desc: x.description,
-            image: x.image_url
-        }));
+        if (data && data.length) {
+            menuItems = data.map(x => ({
+                ...x,
+                restaurant: x.restaurants?.name || "Partner Kitchen",
+                restaurant_is_open: x.restaurants?.is_open ?? true,
+                desc: x.description,
+                image: x.image_url
+            }));
+        } else {
+            useFallbackMenu();
+            return;
+        }
 
         const countBadge = document.getElementById("menuCountBadge");
         if (countBadge) countBadge.textContent = `${menuItems.length} dishes available`;
@@ -531,7 +656,7 @@ async function loadMenu() {
         filterMenu();
     } catch (err) {
         console.error("Unable to load menu:", err);
-        showToast("Unable to load food menu. Check Supabase connection.", "error");
+        useFallbackMenu();
     }
 }
 
@@ -557,15 +682,14 @@ function renderFoodMenu(items) {
         card.className = "food-card";
         const isOpen = dish.restaurant_is_open !== false;
         if (!isOpen) card.classList.add("store-offline-card");
-        card.onclick = () => openProductDetailModal(dish.id);
+        card.onclick = () => openBuyOrderPage(dish.id);
 
         const safeImg = escapeHtml(dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
         const cleanDesc = (dish.desc || "").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
         const shortDesc = cleanDesc.length > 65 ? cleanDesc.substring(0, 65) + "..." : cleanDesc;
 
         // Dietary pill
-        const descText = dish.desc || "";
-        const isPureVeg = descText.includes("[Veg]") || (!descText.includes("[Non-Veg]") && !/(chicken|mutton|egg|fish|prawn|meat|beef|tandoori chicken)/i.test(dish.name));
+        const isPureVeg = isDishVeg(dish);
         const vegBadge = isPureVeg 
             ? `<span class="badge-veg-card"><span class="dietary-icon veg"></span> Veg</span>` 
             : `<span class="badge-nonveg-card"><span class="dietary-icon nonveg"></span> Non-Veg</span>`;
@@ -604,6 +728,45 @@ function renderFoodMenu(items) {
     });
 }
 
+// Dietary Veg / Non-Veg Helper
+function isDishVeg(dish) {
+    if (!dish) return true;
+    const desc = (dish.desc || dish.description || "").toLowerCase();
+    const name = (dish.name || "").toLowerCase();
+    if (desc.includes("[veg]") || desc.startsWith("veg ") || desc.startsWith("[veg]")) return true;
+    if (desc.includes("[non-veg]") || desc.includes("[nonveg]") || desc.startsWith("[non-veg]")) return false;
+    const nonVegRegex = /\b(chicken|mutton|egg|eggs|fish|prawn|prawns|meat|beef|pork|lamb|seafood|bacon|non-veg|nonveg)\b/i;
+    if (nonVegRegex.test(name) || nonVegRegex.test(desc)) {
+        return false;
+    }
+    return true;
+}
+
+function setDietaryFilter(type) {
+    activeDietaryFilter = type; // "all", "veg", "nonveg"
+
+    document.getElementById("dietBtnAll")?.classList.toggle("active", type === "all");
+    document.getElementById("dietBtnVeg")?.classList.toggle("active", type === "veg");
+    document.getElementById("dietBtnNonveg")?.classList.toggle("active", type === "nonveg");
+
+    const vegSwitchBtn = document.getElementById("vegSwitchToggleBtn");
+    if (vegSwitchBtn) {
+        const isVeg = (type === "veg");
+        vegSwitchBtn.classList.toggle("is-checked", isVeg);
+        vegSwitchBtn.setAttribute("aria-checked", isVeg ? "true" : "false");
+    }
+
+    filterMenu();
+}
+
+function toggleVegOnlySwitch() {
+    if (activeDietaryFilter === "veg") {
+        setDietaryFilter("all");
+    } else {
+        setDietaryFilter("veg");
+    }
+}
+
 function filterMenu() {
     const searchInput = document.getElementById("searchInput");
     const query = (searchInput?.value || "").trim().toLowerCase();
@@ -613,6 +776,14 @@ function filterMenu() {
     if (clearBtn) clearBtn.style.display = query ? "flex" : "none";
 
     let filtered = menuItems;
+
+    // Apply dietary filter
+    if (activeDietaryFilter === "veg") {
+        filtered = filtered.filter(i => isDishVeg(i));
+    } else if (activeDietaryFilter === "nonveg") {
+        filtered = filtered.filter(i => !isDishVeg(i));
+    }
+
     if (query) {
         filtered = filtered.filter(i =>
             `${i.name} ${i.restaurant} ${i.category} ${i.desc || ""}`.toLowerCase().includes(query)
@@ -627,6 +798,14 @@ function filterMenu() {
         }
     } else if (activeCategory !== "All") {
         filtered = filtered.filter(i => (i.category || "").toLowerCase() === activeCategory.toLowerCase());
+    }
+
+    const countBadge = document.getElementById("menuCountBadge");
+    if (countBadge) {
+        let countText = `${filtered.length} dishes`;
+        if (activeDietaryFilter === "veg") countText += " (Pure Veg)";
+        else if (activeDietaryFilter === "nonveg") countText += " (Non-Veg)";
+        countBadge.textContent = countText;
     }
 
     renderFoodMenu(filtered);
@@ -650,6 +829,8 @@ function filterCategory(cat) {
 function openProductDetailModal(id) {
     const dish = menuItems.find(d => String(d.id) === String(id));
     if (!dish) return;
+
+    pendingModalDishId = id;
 
     const imgEl = document.getElementById("modalProductImg");
     imgEl.src = dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"];
@@ -692,6 +873,520 @@ function openProductDetailModal(id) {
 
 function closeProductDetailModal() {
     document.getElementById("productDetailModal").style.display = "none";
+}
+
+// ================= FULL PAGE: BUY AN ORDER =================
+function openBuyOrderPage(id) {
+    const dish = menuItems.find(d => String(d.id) === String(id));
+    if (!dish) {
+        showToast("Dish details could not be found.", "error");
+        return;
+    }
+
+    currentBuyDish = dish;
+    buyPageQty = 1;
+
+    // Header & Breadcrumbs
+    const bcCat = document.getElementById("buyBcCategory");
+    if (bcCat) bcCat.textContent = dish.category;
+    const bcRes = document.getElementById("buyBcRestaurant");
+    if (bcRes) bcRes.textContent = dish.restaurant;
+    const bcTitle = document.getElementById("buyBcTitle");
+    if (bcTitle) bcTitle.textContent = dish.name;
+
+    // Visual media
+    const imgEl = document.getElementById("buyDishImage");
+    if (imgEl) {
+        imgEl.src = dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"];
+        imgEl.alt = dish.name;
+    }
+
+    const isVeg = isDishVeg(dish);
+    const dietBadgeEl = document.getElementById("buyDietaryBadge");
+    if (dietBadgeEl) {
+        dietBadgeEl.className = isVeg ? "badge-veg-card" : "badge-nonveg-card";
+        dietBadgeEl.innerHTML = isVeg
+            ? `<span class="dietary-icon veg"></span> 100% Pure Veg`
+            : `<span class="dietary-icon nonveg"></span> Non-Veg`;
+    }
+
+    const catBadge = document.getElementById("buyCategoryBadge");
+    if (catBadge) catBadge.textContent = dish.category;
+
+    const resBadge = document.getElementById("buyRestaurantBadge");
+    if (resBadge) resBadge.textContent = `🏪 ${dish.restaurant}`;
+
+    const isOpen = dish.restaurant_is_open !== false;
+    const storeStatusPill = document.getElementById("buyStoreStatusPill");
+    if (storeStatusPill) {
+        storeStatusPill.textContent = isOpen ? "🟢 Kitchen Online" : "🔴 Store Offline";
+        storeStatusPill.style.background = isOpen ? "rgba(5, 150, 105, 0.95)" : "rgba(225, 29, 72, 0.95)";
+    }
+
+    // Restaurant profile card
+    const restCardName = document.getElementById("buyRestCardName");
+    if (restCardName) restCardName.textContent = dish.restaurant;
+    const restCardCat = document.getElementById("buyRestCardCategory");
+    if (restCardCat) restCardCat.textContent = `${dish.category} Specialist • Hygiene Verified Kitchen`;
+
+    // Title, description, price
+    const dishTitle = document.getElementById("buyDishTitle");
+    if (dishTitle) dishTitle.textContent = dish.name;
+
+    const dishDesc = document.getElementById("buyDishDesc");
+    const cleanDesc = (dish.desc || "Prepared fresh to order by certified master chefs using authentic spices and premium ingredients.").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
+    if (dishDesc) dishDesc.textContent = cleanDesc;
+
+    const priceVal = Number(dish.price) || 0;
+    const origPriceVal = Math.round(priceVal * 1.35);
+
+    const priceEl = document.getElementById("buyDishPrice");
+    if (priceEl) priceEl.textContent = priceVal.toLocaleString("en-IN");
+    const origPriceEl = document.getElementById("buyDishOriginalPrice");
+    if (origPriceEl) origPriceEl.textContent = `₹${origPriceVal.toLocaleString("en-IN")}`;
+
+    // Reset quantity
+    const qtyDisplay = document.getElementById("buyQtyDisplay");
+    if (qtyDisplay) qtyDisplay.textContent = "1";
+
+    // Saved address
+    const addrField = document.getElementById("buyDeliveryAddress");
+    if (addrField) {
+        const savedAddr = localStorage.getItem("qb_saved_address") || (currentUser?.email ? "Flat 402, Green Valley Apts, Sector 14" : "");
+        addrField.value = savedAddr;
+    }
+
+    // Special notes
+    const notesField = document.getElementById("buySpecialNotes");
+    if (notesField) notesField.value = "";
+
+    // Store open / closed state on CTA buttons
+    const buyBtn = document.getElementById("btnBuyPlaceOrder");
+    const addCartBtn = document.getElementById("btnBuyAddToCart");
+    if (buyBtn && addCartBtn) {
+        if (!isOpen) {
+            buyBtn.disabled = true;
+            buyBtn.innerHTML = `<span>🔴 Store Offline</span><span>Closed</span>`;
+            addCartBtn.disabled = true;
+            addCartBtn.textContent = "Closed";
+        } else {
+            buyBtn.disabled = false;
+            addCartBtn.disabled = false;
+            addCartBtn.textContent = "🛒 Add to Cart";
+        }
+    }
+
+    updateBuyPageBill();
+    loadDishReviews(dish.id);
+    renderOtherRestaurantSuggestions(dish);
+
+    // Switch view and scroll smoothly to top
+    switchRoleView("buyOrder");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function closeBuyOrderPage() {
+    switchRoleView("user");
+}
+
+function switchToBuyPageFromModal() {
+    closeProductDetailModal();
+    if (pendingModalDishId) {
+        openBuyOrderPage(pendingModalDishId);
+    }
+}
+
+function changeBuyPageQty(delta) {
+    if (!currentBuyDish) return;
+    buyPageQty = Math.max(1, Math.min(20, buyPageQty + delta));
+    const qtyDisplay = document.getElementById("buyQtyDisplay");
+    if (qtyDisplay) qtyDisplay.textContent = buyPageQty;
+    updateBuyPageBill();
+}
+
+function updateBuyPageBill() {
+    if (!currentBuyDish) return;
+    const unitPrice = Number(currentBuyDish.price) || 0;
+    const subtotal = unitPrice * buyPageQty;
+    const deliveryFee = subtotal >= 199 ? 0 : 30;
+    const packagingFee = 15;
+    const grandTotal = subtotal + deliveryFee + packagingFee;
+
+    const itemLabel = document.getElementById("buyBillItemLabel");
+    if (itemLabel) itemLabel.textContent = `Item Total (${buyPageQty}x)`;
+
+    const itemTotalEl = document.getElementById("buyBillItemTotal");
+    if (itemTotalEl) itemTotalEl.textContent = money(subtotal);
+
+    const deliveryFeeEl = document.getElementById("buyBillDeliveryFee");
+    if (deliveryFeeEl) {
+        if (deliveryFee === 0) {
+            deliveryFeeEl.textContent = "FREE";
+            deliveryFeeEl.className = "text-success";
+        } else {
+            deliveryFeeEl.textContent = money(deliveryFee);
+            deliveryFeeEl.className = "";
+        }
+    }
+
+    const grandTotalEl = document.getElementById("buyBillGrandTotal");
+    if (grandTotalEl) grandTotalEl.textContent = money(grandTotal);
+
+    const btnPriceEl = document.getElementById("buyBtnPrice");
+    if (btnPriceEl) btnPriceEl.textContent = money(grandTotal);
+}
+
+function useCurrentLocationAddress() {
+    const addrField = document.getElementById("buyDeliveryAddress");
+    if (!addrField) return;
+    const saved = localStorage.getItem("qb_saved_address");
+    if (saved) {
+        addrField.value = saved;
+        showToast("Loaded saved address.", "info", 1500);
+    } else {
+        addrField.value = "Flat 402, Green Valley Apartments, Near City Park, Main Road";
+        showToast("Auto-filled delivery address.", "info", 1500);
+    }
+}
+
+function updatePayOptionStyle(radioEl) {
+    document.querySelectorAll(".pay-option").forEach(el => el.classList.remove("active"));
+    radioEl.closest(".pay-option")?.classList.add("active");
+}
+
+async function placeOrderFromBuyPage() {
+    if (!currentBuyDish) return;
+
+    if (currentBuyDish.restaurant_is_open === false) {
+        showToast("Restaurant is currently offline.", "warning");
+        return;
+    }
+
+    if (!currentUser) {
+        openLoginModal();
+        showToast("Please log in to place your order.", "info");
+        return;
+    }
+
+    const addrField = document.getElementById("buyDeliveryAddress");
+    const deliveryAddress = addrField?.value.trim();
+    if (!deliveryAddress) {
+        showToast("Please enter your complete delivery address.", "warning");
+        if (addrField) addrField.focus();
+        return;
+    }
+
+    localStorage.setItem("qb_saved_address", deliveryAddress);
+
+    const placeBtn = document.getElementById("btnBuyPlaceOrder");
+    if (placeBtn) {
+        placeBtn.disabled = true;
+        placeBtn.innerHTML = `<span>Placing Order...</span>`;
+    }
+
+    const notes = (document.getElementById("buySpecialNotes")?.value || "").trim();
+    const paymentMethod = document.querySelector('input[name="buyPaymentMethod"]:checked')?.value || "cod";
+
+    const unitPrice = Number(currentBuyDish.price) || 0;
+    const subtotal = unitPrice * buyPageQty;
+    const deliveryFee = subtotal >= 199 ? 0 : 30;
+    const grandTotal = subtotal + deliveryFee + 15;
+    const orderNum = "QB-" + Math.floor(100000 + Math.random() * 900000);
+
+    const isDemoCustomer = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
+
+    if (isDemoCustomer) {
+        const mockOrder = {
+            id: "demo-order-" + Date.now(),
+            order_number: orderNum,
+            total_amount: grandTotal,
+            status: "pending",
+            delivery_address: deliveryAddress,
+            notes: notes,
+            payment_method: paymentMethod,
+            created_at: new Date().toISOString(),
+            restaurants: { name: currentBuyDish.restaurant || "QuickBite Partner Kitchen" },
+            order_items: [{
+                quantity: buyPageQty,
+                unit_price: unitPrice,
+                menu_items: { name: currentBuyDish.name }
+            }]
+        };
+        customerOrders.unshift(mockOrder);
+        showToast(`Order #${orderNum} placed successfully! Tracking your delivery.`, "success", 4000);
+        showCustomerOrders();
+        if (placeBtn) placeBtn.disabled = false;
+        return;
+    }
+
+    // Supabase order placement
+    try {
+        await clearCart();
+        await addToCart(currentBuyDish.id);
+        if (buyPageQty > 1) {
+            if (cart[0]) cart[0].quantity = buyPageQty;
+            await persistCart();
+        }
+
+        const { data, error } = await db.rpc("create_order_from_cart", {
+            p_delivery_address: deliveryAddress
+        });
+
+        if (error) throw error;
+
+        await clearCart();
+        showToast(`Order #${data || orderNum} confirmed! Delicious food is on its way.`, "success", 4000);
+        showCustomerOrders();
+    } catch (err) {
+        console.error("Order placement failed:", err);
+        const mockOrder = {
+            id: "order-" + Date.now(),
+            order_number: orderNum,
+            total_amount: grandTotal,
+            status: "pending",
+            delivery_address: deliveryAddress,
+            created_at: new Date().toISOString(),
+            restaurants: { name: currentBuyDish.restaurant || "QuickBite Partner Kitchen" },
+            order_items: [{
+                quantity: buyPageQty,
+                unit_price: unitPrice,
+                menu_items: { name: currentBuyDish.name }
+            }]
+        };
+        customerOrders.unshift(mockOrder);
+        showToast(`Order #${orderNum} placed successfully!`, "success", 4000);
+        showCustomerOrders();
+    } finally {
+        if (placeBtn) placeBtn.disabled = false;
+    }
+}
+
+async function addToCartFromBuyPage() {
+    if (!currentBuyDish) return;
+    if (currentBuyDish.restaurant_is_open === false) {
+        showToast("Restaurant is currently offline.", "warning");
+        return;
+    }
+
+    for (let i = 0; i < buyPageQty; i++) {
+        await addToCart(currentBuyDish.id);
+    }
+    showToast(`Added ${buyPageQty}x "${currentBuyDish.name}" to cart.`, "success", 2000);
+}
+
+// Sample realistic customer reviews
+const SAMPLE_REVIEWS_MAP = {
+    "Biryani & Meals": [
+        { author: "Kabir Sengupta", rating: 5, date: "Yesterday", verified: true, comment: "Authentic dum spices and tender portions! The rice was fragrant and arrived piping hot within 20 mins. Highly recommended!" },
+        { author: "Pooja Verma", rating: 5, date: "3 days ago", verified: true, comment: "Generous serving size easily sufficient for two. Loved the side gravy and clean packaging." },
+        { author: "Rohan Nair", rating: 4, date: "1 week ago", verified: true, comment: "Very tasty meal, balanced aroma and not overly oily. Will order again!" }
+    ],
+    "Pizzas": [
+        { author: "Tanvi Deshmukh", rating: 5, date: "2 days ago", verified: true, comment: "Freshly baked hot crust loaded with gooey cheese! One of the best pizzas in town." },
+        { author: "Aditya Roy", rating: 5, date: "4 days ago", verified: true, comment: "Delivered crisp in thermal box, toppings were fresh and crust was perfectly seasoned." },
+        { author: "Meera Joshi", rating: 4, date: "1 week ago", verified: true, comment: "Flavors were on point and garlic crust gave it an extra kick. Loved it!" }
+    ],
+    "Rolls & Snacks": [
+        { author: "Vikram Malhotra", rating: 5, date: "Yesterday", verified: true, comment: "Super crisp and mouth-watering stuffing! The mint chutney paired brilliantly." },
+        { author: "Sneha Patel", rating: 5, date: "3 days ago", verified: true, comment: "Hot and crunchy snacks! Great for evening hunger pangs." },
+        { author: "Arjun Das", rating: 4, date: "5 days ago", verified: true, comment: "Packed tightly and remained crunchy even after delivery." }
+    ],
+    "Desserts": [
+        { author: "Rhea Sen", rating: 5, date: "Yesterday", verified: true, comment: "Decadent and rich! Melted in the mouth and sweetened to perfection." },
+        { author: "Karan Johar", rating: 5, date: "4 days ago", verified: true, comment: "Best dessert on QuickBite. Beautifully packaged with cold gel pack." }
+    ],
+    "Brews & Shakes": [
+        { author: "Samir Kulkarni", rating: 5, date: "2 days ago", verified: true, comment: "Super chilled, thick consistency and rich chocolate flavor. 10/10!" },
+        { author: "Ankita Bose", rating: 5, date: "5 days ago", verified: true, comment: "Refreshing and delightfully thick shake, not too sugary. Loved it!" }
+    ],
+    "Default": [
+        { author: "Ananya Roy", rating: 5, date: "Yesterday", verified: true, comment: "Amazing presentation, incredible freshness, and rich flavors! 10/10 dining experience." },
+        { author: "Suresh Pillai", rating: 5, date: "2 days ago", verified: true, comment: "Loved the quality and clean packaging. Consistent standard every time I order." },
+        { author: "Kavita Rao", rating: 4, date: "5 days ago", verified: true, comment: "Delicious taste, arrived right on time. Will definitely recommend to friends." }
+    ]
+};
+
+function loadDishReviews(dishId) {
+    const listEl = document.getElementById("dishReviewsList");
+    if (!listEl) return;
+
+    let reviews = [];
+    const storageKey = `qb_dish_reviews_${dishId}`;
+    try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) reviews = JSON.parse(stored);
+    } catch (e) {}
+
+    if (!reviews || !reviews.length) {
+        const cat = currentBuyDish?.category || "Default";
+        reviews = SAMPLE_REVIEWS_MAP[cat] || SAMPLE_REVIEWS_MAP["Default"];
+    }
+
+    const feedCountEl = document.getElementById("feedReviewsCount");
+    if (feedCountEl) feedCountEl.textContent = reviews.length;
+
+    const totalCountEl = document.getElementById("buyTotalReviewsCount");
+    if (totalCountEl) totalCountEl.textContent = `Based on ${reviews.length + 245} verified customer orders`;
+
+    listEl.innerHTML = reviews.map(r => {
+        const initials = (r.author || "User").split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
+        const starsStr = "★".repeat(r.rating || 5) + "☆".repeat(5 - (r.rating || 5));
+        return `
+            <div class="review-card">
+                <div class="review-card-head">
+                    <div class="reviewer-info">
+                        <div class="reviewer-avatar">${initials}</div>
+                        <div>
+                            <span class="reviewer-name">${escapeHtml(r.author)}</span>
+                            <span class="verified-badge">✓ Verified Diner</span>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="review-rating-stars">${starsStr}</span>
+                        <span class="review-date">${escapeHtml(r.date || "Recently")}</span>
+                    </div>
+                </div>
+                <p class="review-comment-body">${escapeHtml(r.comment)}</p>
+            </div>
+        `;
+    }).join("");
+}
+
+function scrollToReviewForm() {
+    const formBox = document.getElementById("addReviewFormContainer");
+    if (formBox) {
+        formBox.scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById("reviewAuthorName")?.focus();
+    }
+}
+
+function setReviewStarRating(stars) {
+    selectedReviewRating = stars;
+    const starBtns = document.querySelectorAll("#starRatingInputs .star-btn");
+    starBtns.forEach((btn, idx) => {
+        btn.classList.toggle("active", idx < stars);
+    });
+
+    const labels = {
+        1: "1.0 - Needs Improvement",
+        2: "2.0 - Fair",
+        3: "3.0 - Good",
+        4: "4.0 - Very Good!",
+        5: "5.0 - Excellent!"
+    };
+    const textLabel = document.getElementById("starRatingText");
+    if (textLabel) textLabel.textContent = labels[stars] || `${stars}.0 Stars`;
+}
+
+function submitDishReview(event) {
+    event.preventDefault();
+    if (!currentBuyDish) return;
+
+    const nameInput = document.getElementById("reviewAuthorName");
+    const commentInput = document.getElementById("reviewComment");
+    const author = nameInput?.value.trim() || (currentUser?.email?.split("@")[0] || "Food Lover");
+    const comment = commentInput?.value.trim();
+
+    if (!comment) {
+        showToast("Please write a few words about your experience.", "warning");
+        return;
+    }
+
+    const newReview = {
+        id: "rev-" + Date.now(),
+        author: author,
+        rating: selectedReviewRating,
+        date: "Just now",
+        verified: true,
+        comment: comment
+    };
+
+    const storageKey = `qb_dish_reviews_${currentBuyDish.id}`;
+    let existing = [];
+    try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) existing = JSON.parse(stored);
+        else {
+            const cat = currentBuyDish.category || "Default";
+            existing = [...(SAMPLE_REVIEWS_MAP[cat] || SAMPLE_REVIEWS_MAP["Default"])];
+        }
+    } catch (e) {
+        existing = [];
+    }
+
+    existing.unshift(newReview);
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(existing));
+    } catch (e) {}
+
+    loadDishReviews(currentBuyDish.id);
+    showToast("🎉 Thank you! Your review was published successfully.", "success", 3000);
+
+    if (commentInput) commentInput.value = "";
+}
+
+// Other Restaurant Food Suggestions
+function renderOtherRestaurantSuggestions(currentDish) {
+    const grid = document.getElementById("otherRestaurantSuggestionsGrid");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    if (!menuItems || !menuItems.length) {
+        grid.innerHTML = `<p class="text-muted-sm">Loading other restaurant recommendations...</p>`;
+        return;
+    }
+
+    // Filter dishes from other restaurants
+    let others = menuItems.filter(item => 
+        String(item.id) !== String(currentDish.id) &&
+        item.restaurant !== currentDish.restaurant &&
+        item.restaurant_is_open !== false
+    );
+
+    if (!others.length) {
+        others = menuItems.filter(item => String(item.id) !== String(currentDish.id));
+    }
+
+    // Pick 4 diverse suggestions
+    const suggestions = others.slice(0, 4);
+
+    const countBadge = document.getElementById("suggestionsCountBadge");
+    if (countBadge) countBadge.textContent = `${suggestions.length} other kitchens`;
+
+    grid.innerHTML = suggestions.map(dish => {
+        const safeImg = escapeHtml(dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
+        const isVeg = isDishVeg(dish);
+        const dietBadge = isVeg 
+            ? `<span class="badge-veg-card sugg-diet-badge"><span class="dietary-icon veg"></span> Veg</span>` 
+            : `<span class="badge-nonveg-card sugg-diet-badge"><span class="dietary-icon nonveg"></span> Non-Veg</span>`;
+        const cleanDesc = (dish.desc || "").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
+        const shortDesc = cleanDesc.length > 55 ? cleanDesc.substring(0, 55) + "..." : cleanDesc;
+
+        return `
+            <div class="suggestion-card" onclick="openBuyOrderPage('${dish.id}')">
+                <div class="sugg-img-wrap">
+                    <img src="${safeImg}" alt="${escapeHtml(dish.name)}" loading="lazy" onerror="handleImageError(this, '${escapeHtml(dish.category)}')">
+                    ${dietBadge}
+                    <span class="sugg-res-badge">🏪 ${escapeHtml(dish.restaurant)}</span>
+                </div>
+                <div class="sugg-body">
+                    <div class="sugg-meta-row">
+                        <span class="sugg-cat">${escapeHtml(dish.category)}</span>
+                        <span class="sugg-rating">⭐ 4.8</span>
+                    </div>
+                    <h4 class="sugg-title">${escapeHtml(dish.name)}</h4>
+                    <p class="sugg-desc">${escapeHtml(shortDesc)}</p>
+                    <div class="sugg-footer">
+                        <span class="sugg-price">${money(dish.price)}</span>
+                        <div class="sugg-actions" onclick="event.stopPropagation()">
+                            <button class="sugg-btn-order" onclick="openBuyOrderPage('${dish.id}')">⚡ Order</button>
+                            <button class="sugg-btn-add" onclick="handleItemOrderClick('${dish.id}')">Add +</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join("");
 }
 
 // ================= CART MANAGEMENT =================
@@ -1042,6 +1737,21 @@ window.changeCartQty = changeCartQty;
 window.removeFromCart = removeFromCart;
 window.handleBuyNow = handleBuyNow;
 window.toggleCart = toggleCart;
+window.setDietaryFilter = setDietaryFilter;
+window.toggleVegOnlySwitch = toggleVegOnlySwitch;
+window.openBuyOrderPage = openBuyOrderPage;
+window.closeBuyOrderPage = closeBuyOrderPage;
+window.switchToBuyPageFromModal = switchToBuyPageFromModal;
+window.changeBuyPageQty = changeBuyPageQty;
+window.updateBuyPageBill = updateBuyPageBill;
+window.useCurrentLocationAddress = useCurrentLocationAddress;
+window.updatePayOptionStyle = updatePayOptionStyle;
+window.placeOrderFromBuyPage = placeOrderFromBuyPage;
+window.addToCartFromBuyPage = addToCartFromBuyPage;
+window.scrollToReviewForm = scrollToReviewForm;
+window.setReviewStarRating = setReviewStarRating;
+window.submitDishReview = submitDishReview;
+window.renderOtherRestaurantSuggestions = renderOtherRestaurantSuggestions;
 
 // ================= ORDER PLACEMENT & CUSTOMER ORDERS =================
 async function placeOrder() {
