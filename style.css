@@ -169,10 +169,17 @@ body,
     background: var(--scrollbar-thumb-hover);
 }
 
+html, body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
 body {
     background-color: var(--light-bg);
     color: var(--text-main);
     min-height: 100vh;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Navbar */
@@ -592,13 +599,14 @@ body {
 .card-chip {
     position: absolute;
     top: 10px;
-    right: 10px;
+    left: 10px;
     background: rgba(255, 255, 255, 0.95);
     font-size: 11px;
     font-weight: 700;
     padding: 4px 10px;
     border-radius: 12px;
     color: #333;
+    z-index: 2;
 }
 
 .card-body {
@@ -5373,4 +5381,1429 @@ button:active,
         grid-template-columns: 1fr;
     }
 }
+
+/* ==========================================================================
+   PRODUCTION READY ENHANCEMENTS: FAVORITES, COUPONS, SUPPORT & RECEIPT
+   ========================================================================== */
+
+/* 1. Dish Like / Favorite Buttons */
+.btn-dish-like {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 50px;
+    padding: 5px 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    z-index: 5;
+    transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    outline: none;
+}
+
+.btn-dish-like:hover {
+    transform: scale(1.08);
+    background: #ffffff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.btn-dish-like.is-liked {
+    background: #fff1f2;
+    border-color: #fecdd3;
+    box-shadow: 0 4px 14px rgba(225, 29, 72, 0.25);
+}
+
+.btn-dish-like .like-heart-icon {
+    font-size: 15px;
+    line-height: 1;
+    display: inline-block;
+    transition: transform 0.25s ease;
+}
+
+.btn-dish-like.is-liked .like-heart-icon {
+    animation: heartPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.btn-dish-like .like-count-num {
+    font-size: 12px;
+    font-weight: 700;
+    color: #374151;
+}
+
+.btn-dish-like.is-liked .like-count-num {
+    color: #e11d48;
+}
+
+@keyframes heartPop {
+    0% { transform: scale(0.8); }
+    50% { transform: scale(1.35) rotate(-10deg); }
+    100% { transform: scale(1) rotate(0deg); }
+}
+
+/* Suggestion Card Like Button */
+.sugg-like-btn {
+    top: 8px;
+    right: 8px;
+    padding: 4px 7px;
+}
+
+/* Category Strip Favorites Chip */
+.cat-chip.favorite-chip {
+    border-color: #fecdd3;
+    color: #e11d48;
+}
+
+.cat-chip.favorite-chip:hover {
+    background: #fff1f2;
+    border-color: #f43f5e;
+}
+
+.cat-chip.favorite-chip.active {
+    background: #e11d48 !important;
+    border-color: #e11d48 !important;
+    color: #ffffff !important;
+}
+
+.fav-count-pill {
+    background: #ffe4e6;
+    color: #e11d48;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 12px;
+    margin-left: 4px;
+}
+
+.cat-chip.favorite-chip.active .fav-count-pill {
+    background: #ffffff;
+    color: #e11d48;
+}
+
+/* Buy Page Like Button */
+.buy-title-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.buy-like-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--search-bg);
+    border: 1.5px solid var(--border);
+    color: var(--text-main);
+    padding: 7px 15px;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+}
+
+.buy-like-btn:hover {
+    border-color: #f43f5e;
+    transform: translateY(-1px);
+}
+
+.buy-like-btn.is-liked {
+    background: #fff1f2;
+    border-color: #f43f5e;
+    color: #e11d48;
+}
+
+.buy-like-count-badge {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.buy-like-btn.is-liked .buy-like-count-badge {
+    background: #fecdd3;
+    color: #be123c;
+}
+
+/* Modal Like Button */
+.btn-like-modal {
+    background: var(--search-bg);
+    border: 1.5px solid var(--border);
+    border-radius: 50px;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.2s ease;
+}
+
+.btn-like-modal:hover {
+    transform: scale(1.08);
+    border-color: #f43f5e;
+}
+
+.btn-like-modal.is-liked {
+    background: #ffe4e6;
+    border-color: #f43f5e;
+}
+
+/* 2. Hero Coupon Badge Hint */
+.hero-coupon-action-hint {
+    background: rgba(255, 255, 255, 0.32);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    margin-left: 6px;
+    font-weight: 800;
+    display: inline-block;
+}
+
+/* 3. Cart Promo / Coupon Card */
+.cart-coupon-card {
+    background: var(--search-bg);
+    border: 1.5px dashed var(--border-hover);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.coupon-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-main);
+    margin-bottom: 8px;
+}
+
+.coupon-input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.coupon-input-group input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--card-bg);
+    color: var(--text-main);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.btn-coupon-apply {
+    background: var(--dark);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn-coupon-apply:hover {
+    background: var(--primary);
+}
+
+.coupon-chips-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.coupon-chip {
+    background: rgba(234, 88, 12, 0.1);
+    border: 1px solid rgba(234, 88, 12, 0.25);
+    color: #ea580c;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.coupon-chip:hover {
+    background: rgba(234, 88, 12, 0.2);
+    transform: translateY(-1px);
+}
+
+.applied-coupon-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    padding: 6px 12px;
+    border-radius: 8px;
+}
+
+.applied-coupon-tag {
+    color: #059669;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.btn-coupon-remove {
+    background: none;
+    border: none;
+    color: #ef4444;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* 4. Customer Order Cards: Real-world Action Buttons */
+.order-card-action-btns {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-order-support {
+    background: var(--search-bg);
+    border: 1.5px solid var(--border);
+    color: var(--text-main);
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-order-support:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(234, 88, 12, 0.08);
+}
+
+.btn-order-again {
+    background: var(--primary);
+    border: none;
+    color: white;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-order-again:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-order-receipt {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-order-receipt:hover {
+    color: var(--text-main);
+    border-color: var(--text-muted);
+}
+
+.order-eta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(234, 88, 12, 0.1);
+    color: #ea580c;
+    margin-top: 6px;
+}
+
+/* 5. Support Modal */
+.support-modal-box {
+    max-width: 540px;
+    width: 92%;
+    border-radius: 20px;
+}
+
+.support-content {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.support-policy-card {
+    display: flex;
+    gap: 12px;
+    background: #fffbeb;
+    border: 1px solid #fef3c7;
+    border-radius: 14px;
+    padding: 14px;
+}
+
+.support-policy-icon {
+    font-size: 26px;
+    line-height: 1;
+}
+
+.support-policy-text h4 {
+    font-size: 14px;
+    font-weight: 800;
+    color: #92400e;
+    margin-bottom: 4px;
+}
+
+.support-policy-text p {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #78350f;
+    margin: 0;
+}
+
+.support-contact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.support-contact-box {
+    background: var(--search-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+}
+
+.support-box-icon {
+    font-size: 24px;
+    display: block;
+    margin-bottom: 6px;
+}
+
+.support-contact-box h4 {
+    font-size: 13px;
+    font-weight: 800;
+    margin-bottom: 2px;
+}
+
+.support-contact-name {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.btn-primary-sm {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.2s;
+    width: 100%;
+}
+
+.btn-primary-sm:hover {
+    background: var(--primary-hover);
+}
+
+.support-faq-section h4 {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.support-faq-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.faq-chip {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.faq-chip:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(234, 88, 12, 0.05);
+}
+
+.support-answer-box {
+    margin-top: 12px;
+    background: var(--order-summary-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-main);
+    line-height: 1.5;
+}
+
+.support-answer-icon {
+    font-size: 18px;
+}
+
+/* 6. Customer Receipt Modal */
+.receipt-modal-box {
+    max-width: 520px;
+    width: 92%;
+    border-radius: 20px;
+}
+
+.receipt-paper {
+    background: #ffffff;
+    color: #111827;
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e5e7eb;
+    margin-top: 15px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.receipt-brand-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px dashed #e5e7eb;
+    padding-bottom: 14px;
+    margin-bottom: 16px;
+}
+
+.receipt-logo {
+    font-size: 22px;
+    font-weight: 800;
+    color: #111827;
+}
+
+.receipt-type {
+    font-size: 11px;
+    font-weight: 800;
+    color: #6b7280;
+    letter-spacing: 1px;
+}
+
+.receipt-meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    font-size: 12px;
+    margin-bottom: 14px;
+}
+
+.receipt-label {
+    color: #6b7280;
+    display: block;
+    font-size: 11px;
+}
+
+.receipt-paid-badge {
+    color: #059669;
+    font-weight: 800;
+}
+
+.receipt-divider {
+    border-top: 1px dashed #d1d5db;
+    margin: 14px 0;
+}
+
+.receipt-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.receipt-table th {
+    font-size: 11px;
+    color: #6b7280;
+    font-weight: 700;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 6px;
+}
+
+.receipt-table td {
+    padding: 8px 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.receipt-calc-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.receipt-calc-line {
+    display: flex;
+    justify-content: space-between;
+}
+
+.receipt-grand-total {
+    font-size: 16px;
+    border-top: 1px dashed #9ca3af;
+    padding-top: 8px;
+    margin-top: 4px;
+    color: #111827;
+}
+
+.receipt-address-box {
+    font-size: 12px;
+    background: #f9fafb;
+    border: 1px solid #f3f4f6;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.receipt-address-box p {
+    margin: 4px 0 0;
+    color: #4b5563;
+}
+
+.receipt-footer-text {
+    text-align: center;
+    font-size: 11px;
+    color: #9ca3af;
+    margin-top: 16px;
+}
+
+.receipt-modal-actions {
+    margin-top: 16px;
+}
+
+/* 7. Dark Mode Overrides for New Elements */
+[data-theme="dark"] .btn-dish-like {
+    background: rgba(30, 41, 59, 0.92);
+    border-color: rgba(71, 85, 105, 0.6);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .btn-dish-like:hover {
+    background: #1e293b;
+}
+
+[data-theme="dark"] .btn-dish-like.is-liked {
+    background: #881337;
+    border-color: #be123c;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3);
+}
+
+[data-theme="dark"] .btn-dish-like .like-count-num {
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .btn-dish-like.is-liked .like-count-num {
+    color: #fda4af;
+}
+
+[data-theme="dark"] .buy-like-btn.is-liked {
+    background: #881337;
+    border-color: #f43f5e;
+    color: #ffe4e6;
+}
+
+[data-theme="dark"] .buy-like-btn.is-liked .buy-like-count-badge {
+    background: #be123c;
+    color: #ffffff;
+}
+
+[data-theme="dark"] .btn-like-modal.is-liked {
+    background: #881337;
+    border-color: #f43f5e;
+}
+
+[data-theme="dark"] .cart-coupon-card {
+    background: #1a2234;
+    border-color: #374765;
+}
+
+[data-theme="dark"] .applied-coupon-row {
+    background: #064e3b;
+    border-color: #059669;
+}
+
+[data-theme="dark"] .applied-coupon-tag {
+    color: #a7f3d0;
+}
+
+[data-theme="dark"] .support-policy-card {
+    background: #451a03;
+    border-color: #78350f;
+}
+
+[data-theme="dark"] .support-policy-text h4 {
+    color: #fde68a;
+}
+
+[data-theme="dark"] .support-policy-text p {
+    color: #fef3c7;
+}
+
+[data-theme="dark"] .receipt-paper {
+    background: #1e293b;
+    color: #f1f5f9;
+    border-color: #334155;
+}
+
+[data-theme="dark"] .receipt-logo {
+    color: #f1f5f9;
+}
+
+[data-theme="dark"] .receipt-type {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .receipt-label {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .receipt-table th {
+    color: #94a3b8;
+    border-bottom-color: #334155;
+}
+
+[data-theme="dark"] .receipt-table td {
+    border-bottom-color: #2e3b52;
+}
+
+[data-theme="dark"] .receipt-grand-total {
+    color: #ffffff;
+}
+
+[data-theme="dark"] .receipt-address-box {
+    background: #0f172a;
+    border-color: #1e293b;
+}
+
+[data-theme="dark"] .receipt-address-box p {
+    color: #cbd5e1;
+}
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    #customerReceiptPaper, #customerReceiptPaper * {
+        visibility: visible;
+    }
+    #customerReceiptPaper {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        box-shadow: none;
+        border: none;
+    }
+}
+
+/* ==========================================================================
+   CANCEL ORDER & 70% REFUND MODAL STYLES
+   ========================================================================== */
+.btn-danger {
+    background: #ef4444;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+    box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
+    transform: translateY(-1px);
+}
+
+.btn-danger:active {
+    transform: translateY(0);
+}
+
+.btn-cancel-order-customer {
+    background: transparent;
+    border: 1.5px solid #ef4444;
+    color: #ef4444;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-cancel-order-customer:hover {
+    background: #ef4444;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+    transform: translateY(-1px);
+}
+
+.cancel-modal-box {
+    max-width: 500px;
+    width: 92%;
+    border-radius: 20px;
+    padding: 24px;
+    background: var(--modal-bg, #ffffff);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.cancel-modal-content {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.cancel-warning-banner {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: #fef2f2;
+    border: 1.5px solid #fecaca;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.cancel-warning-banner .warning-icon {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.cancel-warning-banner .warning-text strong {
+    display: block;
+    color: #991b1b;
+    font-size: 13.5px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.cancel-warning-banner .warning-text p {
+    font-size: 12.5px;
+    color: #b91c1c;
+    margin: 0;
+    line-height: 1.45;
+}
+
+.cancel-warning-banner.is-full-refund {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+}
+
+.cancel-warning-banner.is-full-refund .warning-text strong {
+    color: #065f46 !important;
+}
+
+.cancel-warning-banner.is-full-refund .warning-text p {
+    color: #047857 !important;
+}
+
+.refund-breakdown-card {
+    background: #f8fafc;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.refund-breakdown-card h4 {
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted, #64748b);
+    margin: 0 0 12px;
+}
+
+.refund-calc-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13.5px;
+    padding: 5px 0;
+    color: var(--text-main, #1e293b);
+}
+
+.refund-calc-row.text-danger {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.refund-calc-divider {
+    height: 1px;
+    border-top: 1px dashed var(--border, #cbd5e1);
+    margin: 8px 0;
+}
+
+.refund-calc-row.refund-highlight {
+    font-size: 15px;
+    font-weight: 800;
+    padding-top: 4px;
+}
+
+.refund-calc-row.refund-highlight .text-green {
+    color: #10b981;
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.refund-note {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--text-muted, #64748b);
+    line-height: 1.4;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.order-refund-box {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 8px;
+}
+
+/* Dark Mode Overrides for Cancel Modal */
+[data-theme="dark"] .btn-cancel-order-customer {
+    border-color: #f87171;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+[data-theme="dark"] .btn-cancel-order-customer:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+[data-theme="dark"] .cancel-modal-box {
+    background: var(--modal-bg, #151c2e);
+}
+
+[data-theme="dark"] .cancel-warning-banner {
+    background: rgba(127, 29, 29, 0.25);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+[data-theme="dark"] .cancel-warning-banner .warning-text strong {
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .cancel-warning-banner .warning-text p {
+    color: #fecaca;
+}
+
+[data-theme="dark"] .cancel-warning-banner.is-full-refund {
+    background: rgba(6, 78, 59, 0.3) !important;
+    border-color: rgba(5, 150, 105, 0.45) !important;
+}
+
+[data-theme="dark"] .cancel-warning-banner.is-full-refund .warning-text strong {
+    color: #6ee7b7 !important;
+}
+
+[data-theme="dark"] .cancel-warning-banner.is-full-refund .warning-text p {
+    color: #a7f3d0 !important;
+}
+
+[data-theme="dark"] .refund-breakdown-card {
+    background: #1a2234;
+    border-color: #2e3b52;
+}
+
+[data-theme="dark"] .refund-calc-row {
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .refund-calc-divider {
+    border-top-color: #334155;
+}
+
+[data-theme="dark"] .refund-note {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #a7f3d0;
+}
+
+/* ==========================================================================
+   COMPREHENSIVE FULL-RESPONSIVE OVERHAUL (MOBILE, TABLET, DESKTOP)
+   ========================================================================== */
+
+/* 1. Global Box-Sizing & Flow Protection */
+html, body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 2. Modals Global Responsive Behavior */
+.modal-backdrop {
+    padding: 16px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.modal-box {
+    max-height: 92vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 3. Breakpoint: Large Tablets & Laptops (<= 1024px) */
+@media (max-width: 1024px) {
+    .main-wrapper {
+        padding: 0 16px;
+    }
+
+    .hero-banner {
+        padding: 30px;
+    }
+
+    .analytics-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+}
+
+/* 4. Breakpoint: Tablets & Mobile Landscape (<= 768px) */
+@media (max-width: 768px) {
+    body.has-cart-items {
+        padding-bottom: 85px !important;
+    }
+
+    .main-wrapper {
+        margin: 16px auto;
+        padding: 0 12px;
+    }
+
+    /* Navbar 3-Row Clean Hierarchy */
+    .nav-container {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        gap: 8px 12px;
+    }
+
+    .logo {
+        order: 1;
+        font-size: 20px;
+    }
+
+    .logo .brand-logo-img {
+        height: 32px;
+    }
+
+    .nav-actions {
+        order: 2;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+    }
+
+    .nav-search {
+        order: 3;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 4px 0 0;
+        padding: 8px 16px;
+    }
+
+    .nav-main-links {
+        order: 4;
+        width: 100%;
+        display: flex;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        white-space: nowrap;
+        padding: 6px 2px 4px;
+        gap: 6px;
+        scrollbar-width: none;
+    }
+
+    .nav-main-links::-webkit-scrollbar {
+        display: none;
+    }
+
+    .nav-link-btn {
+        padding: 6px 12px;
+        font-size: 12.5px;
+        flex-shrink: 0;
+    }
+
+    /* Hero Banner Mobile */
+    .hero-banner {
+        flex-direction: column;
+        padding: 24px 18px;
+        text-align: center;
+        gap: 20px;
+        border-radius: 18px;
+        margin-bottom: 24px;
+    }
+
+    .hero-image {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+
+    .hero-image img {
+        width: 100%;
+        max-width: 380px;
+        height: auto;
+        max-height: 220px;
+    }
+
+    .hero-content h1 {
+        font-size: 28px;
+        line-height: 1.2;
+    }
+
+    .hero-highlights {
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .hero-stat-pill {
+        flex: 1 1 calc(50% - 8px);
+        justify-content: center;
+    }
+
+    /* Horizontal category strip */
+    .category-strip {
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 8px;
+        margin-bottom: 22px;
+    }
+
+    .category-strip::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* Food Grid Tablets */
+    .food-grid {
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 16px;
+    }
+
+    /* Customer Order Cards */
+    .customer-order-card {
+        padding: 18px;
+        border-radius: 16px;
+    }
+
+    .order-card-body {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    /* Tabs & Portals */
+    .admin-tabs, .rest-tabs {
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 6px;
+        gap: 6px;
+    }
+
+    .admin-tabs::-webkit-scrollbar, .rest-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .admin-tab-btn, .rest-tab-btn {
+        padding: 8px 14px;
+        font-size: 12.5px;
+        flex-shrink: 0;
+    }
+
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .kds-orders-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    /* Modals Responsive */
+    .modal-box {
+        max-width: 95% !important;
+        padding: 22px 18px;
+    }
+}
+
+/* 5. Breakpoint: Small Mobile & Stepper Adaptation (<= 640px) */
+@media (max-width: 640px) {
+    .role-banner {
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 12px;
+        text-align: center;
+    }
+
+    .role-banner-left, .role-banner-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .order-card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    /* Stepper Mobile Resizing to prevent label overlap */
+    .order-stepper {
+        padding: 0 4px;
+        margin: 16px 0 14px;
+    }
+
+    .stepper-dot {
+        width: 26px;
+        height: 26px;
+        font-size: 11px;
+        margin-bottom: 4px;
+        border-width: 1.5px;
+    }
+
+    .stepper-label {
+        font-size: 9.5px;
+        max-width: 50px;
+        line-height: 1.15;
+    }
+
+    .stepper-line {
+        top: 13px;
+        left: 20px;
+        right: 20px;
+        height: 2px;
+    }
+
+    /* Customer Order Card Footer: Action buttons in responsive flex grid */
+    .order-card-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .order-card-action-btns {
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .order-card-action-btns button {
+        flex: 1 1 calc(50% - 8px);
+        justify-content: center;
+        text-align: center;
+        padding: 9px 10px;
+        font-size: 12px;
+    }
+}
+
+/* 6. Breakpoint: Compact Smartphones (<= 480px) */
+@media (max-width: 480px) {
+    .main-wrapper {
+        padding: 0 8px;
+        margin: 10px auto;
+    }
+
+    /* Navbar on compact mobile */
+    .logo {
+        font-size: 18px;
+    }
+
+    .logo .brand-logo-img {
+        height: 28px;
+    }
+
+    .btn-theme-toggle {
+        width: 34px;
+        height: 34px;
+    }
+
+    .btn-theme-toggle svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    .user-pill {
+        padding: 4px 8px;
+        font-size: 11.5px;
+    }
+
+    /* Hero text sizing */
+    .hero-banner {
+        padding: 18px 14px;
+    }
+
+    .hero-content h1 {
+        font-size: 22px;
+    }
+
+    .hero-content p {
+        font-size: 13px;
+    }
+
+    .hero-stat-pill {
+        flex: 1 1 100%;
+    }
+
+    /* Single Column Food Cards */
+    .food-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .card-img-wrap {
+        height: 190px;
+    }
+
+    .card-body {
+        padding: 14px;
+    }
+
+    .cat-chip {
+        padding: 7px 14px;
+        font-size: 12px;
+    }
+
+    /* Stats summary */
+    .stats-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    /* Modals: full width bottom-sheet / modal card */
+    .modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 18px 14px !important;
+        border-radius: 16px !important;
+    }
+
+    .cart-modal-box,
+    .cancel-modal-box,
+    .support-modal-box,
+    .receipt-modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 18px 14px !important;
+    }
+
+    .detail-modal-box {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .detail-body {
+        padding: 16px !important;
+    }
+}
+
+/* 7. Breakpoint: Ultra Narrow Screens (<= 400px) */
+@media (max-width: 400px) {
+    .order-stepper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 8px;
+        scrollbar-width: none;
+    }
+
+    .order-stepper::-webkit-scrollbar {
+        display: none;
+    }
+
+    .stepper-step {
+        min-width: 58px;
+        flex: 0 0 58px;
+    }
+
+    .stepper-line {
+        width: calc(100% - 30px);
+        min-width: 310px;
+    }
+
+    .order-card-action-btns button {
+        flex: 1 1 100%;
+    }
+}
+
 

@@ -35,6 +35,23 @@ let pendingModalDishId = null;
 let isCartSyncing = false;
 let pendingCartSync = false;
 
+// Favorites / Likes State
+let favoriteDishIds = new Set();
+let dishLikeCounts = {};
+
+// Coupon / Promo Code State
+let appliedCartCoupon = null;
+const AVAILABLE_COUPONS = {
+    QUICK50: { code: "QUICK50", discountPct: 50, maxDiscount: 150, minOrder: 199, label: "50% OFF (Up to ₹150)" },
+    WELCOME20: { code: "WELCOME20", discountPct: 20, maxDiscount: 80, minOrder: 149, label: "20% OFF (Up to ₹80)" },
+    TASTY10: { code: "TASTY10", discountPct: 10, maxDiscount: 50, minOrder: 0, label: "10% OFF (Up to ₹50)" }
+};
+
+// Order Support, Receipt & Cancellation Modal State
+let activeSupportOrder = null;
+let activeReceiptOrder = null;
+let activeCancellingOrder = null;
+
 const ROLE_LABELS = {
     user: "Customer",
     restaurant: "Restaurant Partner",
@@ -60,6 +77,550 @@ const CATEGORY_FALLBACK_IMAGES = {
     "Brews & Shakes": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=600&auto=format&fit=crop&q=80",
     "Default": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80"
 };
+
+// ================= FAVORITES & LIKE FUNCTIONALITY =================
+function loadFavorites() {
+    try {
+        const favs = localStorage.getItem("quickbite_favorites");
+        if (favs) favoriteDishIds = new Set(JSON.parse(favs));
+        const counts = localStorage.getItem("quickbite_like_counts");
+        if (counts) dishLikeCounts = JSON.parse(counts);
+    } catch (e) {}
+    updateFavoritesBadge();
+}
+
+function saveFavorites() {
+    try {
+        localStorage.setItem("quickbite_favorites", JSON.stringify([...favoriteDishIds]));
+        localStorage.setItem("quickbite_like_counts", JSON.stringify(dishLikeCounts));
+    } catch (e) {}
+    updateFavoritesBadge();
+}
+
+function isDishLiked(dishId) {
+    return favoriteDishIds.has(String(dishId));
+}
+
+function getDishLikeCount(dishId) {
+    const idStr = String(dishId);
+    if (dishLikeCounts[idStr] !== undefined) return dishLikeCounts[idStr];
+    let hash = 0;
+    for (let i = 0; i < idStr.length; i++) {
+        hash = (hash << 5) - hash + idStr.charCodeAt(i);
+        hash |= 0;
+    }
+    const base = 95 + (Math.abs(hash) % 240);
+    dishLikeCounts[idStr] = base;
+    return base;
+}
+
+function toggleLikeDish(dishId, event) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    const idStr = String(dishId);
+    const currentlyLiked = isDishLiked(idStr);
+    const currentCount = getDishLikeCount(idStr);
+
+    if (currentlyLiked) {
+        favoriteDishIds.delete(idStr);
+        dishLikeCounts[idStr] = Math.max(0, currentCount - 1);
+        showToast("Removed from favorites", "info", 2000);
+    } else {
+        favoriteDishIds.add(idStr);
+        dishLikeCounts[idStr] = currentCount + 1;
+        showToast("Added to favorites ❤️", "success", 2000);
+    }
+    saveFavorites();
+    syncDishLikeElements(idStr);
+
+    if (activeCategory === "Favorites") {
+        filterMenu();
+    }
+}
+
+function toggleLikeCurrentBuyDish() {
+    if (!currentBuyDish) return;
+    toggleLikeDish(currentBuyDish.id);
+}
+
+function toggleLikeModalDish() {
+    if (!pendingModalDishId) return;
+    toggleLikeDish(pendingModalDishId);
+}
+
+function updateFavoritesBadge() {
+    const badge = document.getElementById("favCountBadge");
+    if (badge) {
+        const count = favoriteDishIds.size;
+        badge.textContent = count;
+        badge.style.display = count > 0 ? "inline-block" : "none";
+    }
+}
+
+function syncDishLikeElements(dishId) {
+    const idStr = String(dishId);
+    const liked = isDishLiked(idStr);
+    const count = getDishLikeCount(idStr);
+
+    // Update food cards in foodGrid and suggestion cards
+    document.querySelectorAll(`.btn-dish-like[data-dish-id="${idStr}"]`).forEach(btn => {
+        btn.classList.toggle("is-liked", liked);
+        btn.setAttribute("aria-label", liked ? "Unlike dish" : "Like dish");
+        btn.setAttribute("title", liked ? "Remove from favorites" : "Add to favorites");
+        const icon = btn.querySelector(".like-heart-icon");
+        if (icon) icon.textContent = liked ? "❤️" : "🤍";
+        const countEl = btn.querySelector(".like-count-num");
+        if (countEl) countEl.textContent = count;
+    });
+
+    // Update full buy order page like button
+    if (currentBuyDish && String(currentBuyDish.id) === idStr) {
+        const buyLikeBtn = document.getElementById("buyDishLikeBtn");
+        if (buyLikeBtn) {
+            buyLikeBtn.classList.toggle("is-liked", liked);
+            const icon = buyLikeBtn.querySelector(".buy-like-icon");
+            if (icon) icon.textContent = liked ? "❤️" : "🤍";
+            const label = buyLikeBtn.querySelector(".buy-like-label");
+            if (label) label.textContent = liked ? "Liked" : "Favorite";
+            const countEl = document.getElementById("buyDishLikeCount");
+            if (countEl) countEl.textContent = count;
+        }
+    }
+
+    // Update product detail modal like button
+    const modalLikeBtn = document.getElementById("modalDishLikeBtn");
+    if (modalLikeBtn && String(pendingModalDishId) === idStr) {
+        modalLikeBtn.classList.toggle("is-liked", liked);
+        const icon = modalLikeBtn.querySelector(".like-heart-icon");
+        if (icon) icon.textContent = liked ? "❤️" : "🤍";
+    }
+}
+
+// ================= PROMO COUPONS & DISCOUNTS =================
+function applyCartCoupon() {
+    const input = document.getElementById("couponCodeInput");
+    const code = (input?.value || "").trim().toUpperCase();
+    if (!code) {
+        showToast("Please enter a coupon code (e.g. QUICK50).", "warning");
+        return;
+    }
+    applyDirectCoupon(code);
+}
+
+function applyDirectCoupon(code) {
+    const upper = String(code).trim().toUpperCase();
+    const coupon = AVAILABLE_COUPONS[upper];
+    if (!coupon) {
+        showToast(`Invalid coupon "${upper}". Try QUICK50 or WELCOME20.`, "error");
+        return;
+    }
+
+    const subtotal = cart.reduce((sum, item) => sum + Number(item.menu?.price || 0) * Number(item.quantity || 1), 0);
+    if (coupon.minOrder && subtotal < coupon.minOrder) {
+        showToast(`Coupon ${upper} requires minimum order of ₹${coupon.minOrder}.`, "warning");
+        return;
+    }
+
+    appliedCartCoupon = coupon;
+    renderCartItems();
+    const discountAmt = Math.min(coupon.maxDiscount, Math.round(subtotal * (coupon.discountPct / 100)));
+    showToast(`🎉 Coupon ${upper} applied! You save ₹${discountAmt}.`, "success", 3500);
+}
+
+function applyHeroCoupon() {
+    applyDirectCoupon("QUICK50");
+    if (!cart.length) {
+        showToast("Coupon QUICK50 activated! Add delicious dishes to use it.", "success", 3500);
+    } else {
+        toggleCart();
+    }
+}
+
+function removeCartCoupon() {
+    appliedCartCoupon = null;
+    renderCartItems();
+    showToast("Coupon removed.", "info");
+}
+
+// ================= UNIFIED SHARED DEMO ORDERS STORE =================
+function getSharedOrders() {
+    try {
+        const stored = localStorage.getItem("qb_shared_orders");
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+    } catch (e) {}
+
+    const seed = [
+        {
+            id: "demo-ord-past-1",
+            order_number: "QB-892415",
+            total_amount: 394,
+            status: "delivered",
+            delivery_address: "Flat 402, Green Valley Apts, Sector 14",
+            created_at: new Date(Date.now() - 86400000).toISOString(),
+            restaurants: { name: "Royal Biryani House" },
+            restaurant_id: "demo-rest-1",
+            order_items: [
+                { quantity: 1, unit_price: 249, menu_items: { name: "Hyderabadi Chicken Dum Biryani", category: "Biryani & Meals" } },
+                { quantity: 1, unit_price: 130, menu_items: { name: "Mirchi Ka Salan & Raita Bowl", category: "Biryani & Meals" } }
+            ]
+        }
+    ];
+    saveSharedOrders(seed);
+    return seed;
+}
+
+function saveSharedOrders(orders) {
+    try {
+        localStorage.setItem("qb_shared_orders", JSON.stringify(orders));
+    } catch (e) {}
+}
+
+function updateSharedOrderStatus(orderId, newStatus, riderId = null) {
+    try {
+        const orders = getSharedOrders();
+        const ord = orders.find(o => String(o.id) === String(orderId) || String(o.order_number) === String(orderId));
+        if (ord) {
+            ord.status = newStatus;
+            if (riderId !== null) ord.rider_id = riderId;
+            saveSharedOrders(orders);
+            return true;
+        }
+    } catch (e) {
+        console.error("updateSharedOrderStatus error:", e);
+    }
+    return false;
+}
+
+// ================= CUSTOMER ORDER CANCELLATION (BEFORE COOKING) =================
+function openCancelOrderModal(orderId) {
+    const order = customerOrders.find(o => String(o.id) === String(orderId))
+        || getSharedOrders().find(o => String(o.id) === String(orderId));
+    if (!order) {
+        showToast("Order details could not be found.", "error");
+        return;
+    }
+
+    // Verify cancellation window: allowed in pending, confirmed, or preparing
+    if (order.status !== "pending" && order.status !== "confirmed" && order.status !== "preparing") {
+        showToast("Food has already been prepared and dispatched. Orders cannot be cancelled after leaving the kitchen.", "warning", 4500);
+        return;
+    }
+
+    activeCancellingOrder = order;
+
+    const isPreparing = (order.status === "preparing");
+    const totalAmt = Number(order.total_amount || 0);
+    const refundAmt = isPreparing ? Math.round(totalAmt * 0.7) : totalAmt;
+    const deductionFee = isPreparing ? Math.round(totalAmt * 0.3) : 0;
+
+    const bannerEl = document.getElementById("cancelWarningBanner");
+    const iconEl = document.getElementById("cancelWarningIcon");
+    const titleEl = document.getElementById("cancelWarningTitle");
+    const descEl = document.getElementById("cancelWarningDesc");
+
+    if (isPreparing) {
+        if (iconEl) iconEl.textContent = "⚠️";
+        if (titleEl) titleEl.textContent = "Kitchen is Preparing: 70% Refund Policy";
+        if (descEl) descEl.innerHTML = "The kitchen has already started preparing your food. If you cancel now, you will receive a <strong>70% refund</strong>. A 30% fee is deducted for kitchen preparation and ingredient costs.";
+        if (bannerEl) {
+            bannerEl.classList.remove("is-full-refund");
+            bannerEl.classList.add("is-prep-refund");
+            bannerEl.style.background = "";
+            bannerEl.style.borderColor = "";
+        }
+    } else {
+        if (iconEl) iconEl.textContent = "✅";
+        if (titleEl) titleEl.textContent = "Pre-Cooking Cancellation: 100% Full Refund";
+        if (descEl) descEl.innerHTML = "Kitchen preparation has not started yet. You will receive a <strong>100% Full Refund</strong> of your paid amount with <strong>zero cancellation fees</strong>.";
+        if (bannerEl) {
+            bannerEl.classList.remove("is-prep-refund");
+            bannerEl.classList.add("is-full-refund");
+            bannerEl.style.background = "";
+            bannerEl.style.borderColor = "";
+        }
+    }
+
+    const orderNumEl = document.getElementById("cancelModalOrderNum");
+    if (orderNumEl) orderNumEl.textContent = `Order #${order.order_number}`;
+
+    const originalEl = document.getElementById("cancelOriginalTotal");
+    if (originalEl) originalEl.textContent = money(totalAmt);
+
+    const deductionLabelEl = document.getElementById("cancelDeductionLabel");
+    if (deductionLabelEl) {
+        deductionLabelEl.textContent = isPreparing ? "Kitchen Prep & Ingredient Fee (30%):" : "Cancellation Fee (0%):";
+    }
+
+    const deductionEl = document.getElementById("cancelDeductionFee");
+    if (deductionEl) {
+        deductionEl.textContent = isPreparing ? `-${money(deductionFee)}` : "₹0 (Free Cancellation)";
+        deductionEl.style.color = isPreparing ? "#ef4444" : "#10b981";
+    }
+
+    const refundLabelEl = document.getElementById("cancelRefundLabel");
+    if (refundLabelEl) {
+        refundLabelEl.textContent = isPreparing ? "Net Refund Amount (70%):" : "Net Refund Amount (100% Full):";
+    }
+
+    const refundEl = document.getElementById("cancelRefundAmount");
+    if (refundEl) refundEl.textContent = money(refundAmt);
+
+    const noteAmtEl = document.getElementById("cancelRefundNoteAmount");
+    if (noteAmtEl) noteAmtEl.textContent = refundAmt.toLocaleString("en-IN");
+
+    const btn = document.getElementById("btnConfirmCancellation");
+    if (btn) {
+        btn.textContent = isPreparing ? "Confirm Cancellation & Get 70% Refund" : "Confirm Cancellation & Get 100% Full Refund";
+    }
+
+    const modal = document.getElementById("cancelOrderModal");
+    if (modal) modal.style.display = "flex";
+}
+
+function closeCancelOrderModal() {
+    activeCancellingOrder = null;
+    const modal = document.getElementById("cancelOrderModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function confirmCustomerCancelOrder() {
+    if (!activeCancellingOrder) return;
+    const order = activeCancellingOrder;
+
+    // Check if order has progressed past preparing
+    if (order.status !== "pending" && order.status !== "confirmed" && order.status !== "preparing") {
+        closeCancelOrderModal();
+        showToast("Food has already been prepared/dispatched. Order cannot be cancelled.", "warning", 4500);
+        return;
+    }
+
+    const isPreparing = (order.status === "preparing");
+    const totalAmt = Number(order.total_amount || 0);
+    const refundAmt = isPreparing ? Math.round(totalAmt * 0.7) : totalAmt;
+    const deductionFee = isPreparing ? Math.round(totalAmt * 0.3) : 0;
+    const refundPct = isPreparing ? 70 : 100;
+    const reason = document.getElementById("cancelReasonSelect")?.value || (isPreparing ? "Cancelled while preparing" : "Cancelled before cooking");
+
+    const btn = document.getElementById("btnConfirmCancellation");
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Processing Cancellation & Refund...";
+    }
+
+    try {
+        if (db) {
+            try {
+                await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
+            } catch (e) {}
+        }
+
+        // Update in shared orders with refund metadata
+        const shared = getSharedOrders();
+        const sharedOrd = shared.find(o => String(o.id) === String(order.id) || String(o.order_number) === String(order.order_number));
+        if (sharedOrd) {
+            sharedOrd.status = "cancelled";
+            sharedOrd.refund_amount = refundAmt;
+            sharedOrd.refund_pct = refundPct;
+            sharedOrd.cancellation_fee = deductionFee;
+            sharedOrd.cancellation_reason = reason;
+            sharedOrd.cancelled_at = new Date().toISOString();
+            saveSharedOrders(shared);
+        }
+
+        order.status = "cancelled";
+        order.refund_amount = refundAmt;
+        order.refund_pct = refundPct;
+        order.cancellation_fee = deductionFee;
+        order.cancellation_reason = reason;
+
+        closeCancelOrderModal();
+        if (isPreparing) {
+            showToast(`Order #${order.order_number} cancelled. 70% refund of ₹${refundAmt} initiated!`, "info", 5000);
+        } else {
+            showToast(`Order #${order.order_number} cancelled. 100% Full Refund of ₹${refundAmt} initiated!`, "success", 5000);
+        }
+        await loadCustomerOrders();
+    } catch (err) {
+        console.error("Cancel order error:", err);
+        showToast("Failed to process cancellation. Please contact support.", "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = isPreparing ? "Confirm Cancellation & Get 70% Refund" : "Confirm Cancellation & Get 100% Full Refund";
+        }
+    }
+}
+
+// ================= ORDER SUPPORT & CUSTOMER RECEIPT MODALS =================
+function openOrderSupportModal(orderId) {
+    const order = customerOrders.find(o => String(o.id) === String(orderId))
+        || getSharedOrders().find(o => String(o.id) === String(orderId));
+    if (!order) {
+        showToast("Order details could not be found.", "error");
+        return;
+    }
+    activeSupportOrder = order;
+
+    const numEl = document.getElementById("supportOrderNumber");
+    if (numEl) numEl.textContent = `Order #${order.order_number || "QB-000000"}`;
+
+    const restEl = document.getElementById("supportRestName");
+    if (restEl) restEl.textContent = order.restaurants?.name || "QuickBite Partner Kitchen";
+
+    const riderEl = document.getElementById("supportRiderStatus");
+    if (riderEl) {
+        riderEl.textContent = order.status === "picked_up"
+            ? "Rider Assigned • Out for Delivery"
+            : order.status === "ready_for_pickup"
+            ? "Order Packed • Ready for Fleet"
+            : order.status === "delivered"
+            ? "Delivered Successfully"
+            : "Kitchen Preparing • Fleet assigning soon";
+    }
+
+    const answerBox = document.getElementById("supportAnswerBox");
+    if (answerBox) answerBox.style.display = "none";
+
+    const modal = document.getElementById("orderSupportModal");
+    if (modal) modal.style.display = "flex";
+}
+
+function closeOrderSupportModal() {
+    const modal = document.getElementById("orderSupportModal");
+    if (modal) modal.style.display = "none";
+}
+
+function callRestaurantSupport() {
+    const restName = activeSupportOrder?.restaurants?.name || "Kitchen";
+    showToast(`Connecting to ${restName} support (+91 98765 43210)...`, "info", 4000);
+}
+
+function callRiderSupport() {
+    if (!activeSupportOrder || !["picked_up", "delivered"].includes(activeSupportOrder.status)) {
+        showToast("A delivery partner will be assigned as soon as the kitchen packs your meal.", "info", 3500);
+        return;
+    }
+    showToast("Connecting to Delivery Partner (+91 91234 56789)...", "info", 4000);
+}
+
+function handleSupportTopic(topic) {
+    const answerBox = document.getElementById("supportAnswerBox");
+    const answerText = document.getElementById("supportAnswerText");
+    if (!answerBox || !answerText) return;
+
+    const answers = {
+        address: "Drop-off coordinates have been relayed to the kitchen and delivery rider. If you need urgent pinpoint adjustments, you can also notify the rider upon dispatch.",
+        delay: "Fresh gourmet cooking takes 15-20 minutes. Your meal is currently on schedule and temperature-insulated packaging ensures it arrives piping hot!",
+        diet: "All chef preparation notes and dietary instructions entered during checkout were printed directly on the kitchen KOT slip.",
+        cutlery: "Eco-friendly cutlery, tissue napkins, and spice condiments are automatically included with this order."
+    };
+
+    answerText.textContent = answers[topic] || "Our support team is monitoring your order.";
+    answerBox.style.display = "flex";
+}
+
+function openCustomerReceiptModal(orderId) {
+    const order = customerOrders.find(o => String(o.id) === String(orderId))
+        || getSharedOrders().find(o => String(o.id) === String(orderId));
+    if (!order) {
+        showToast("Invoice details could not be found.", "error");
+        return;
+    }
+    activeReceiptOrder = order;
+
+    document.getElementById("receiptOrderNumber").textContent = `#${order.order_number}`;
+    document.getElementById("receiptOrderDate").textContent = formatDate(order.created_at);
+    document.getElementById("receiptRestName").textContent = order.restaurants?.name || "QuickBite Partner Kitchen";
+
+    const custNameEl = document.getElementById("receiptCustomerName");
+    if (custNameEl) {
+        custNameEl.textContent = order.profiles?.full_name || currentUser?.user_metadata?.full_name || "Valued Customer";
+    }
+
+    const statusBadge = document.getElementById("receiptStatusBadge");
+    if (statusBadge) {
+        statusBadge.textContent = (STATUS_LABELS[order.status] || order.status).toUpperCase();
+    }
+
+    const tbody = document.getElementById("receiptItemsTbody");
+    if (tbody) {
+        tbody.innerHTML = (order.order_items || []).map(item => `
+            <tr>
+                <td>${escapeHtml(item.menu_items?.name || "Delicious Dish")}</td>
+                <td style="text-align:center;">${item.quantity}</td>
+                <td style="text-align:right;">${money(Number(item.unit_price) * Number(item.quantity))}</td>
+            </tr>
+        `).join("") || `<tr><td colspan="3">Standard meal items</td></tr>`;
+    }
+
+    const subtotal = (order.order_items || []).reduce((s, i) => s + (Number(i.unit_price) * Number(i.quantity)), 0) || Number(order.total_amount || 0);
+    document.getElementById("receiptSubtotal").textContent = money(subtotal);
+
+    const discountRow = document.getElementById("receiptDiscountRow");
+    if (order.discount_amount && Number(order.discount_amount) > 0) {
+        discountRow.style.display = "flex";
+        document.getElementById("receiptDiscount").textContent = `-${money(order.discount_amount)}`;
+    } else {
+        discountRow.style.display = "none";
+    }
+
+    document.getElementById("receiptGrandTotal").textContent = money(order.total_amount);
+    document.getElementById("receiptDeliveryAddress").textContent = order.delivery_address || "Standard Customer Address";
+
+    const modal = document.getElementById("customerReceiptModal");
+    if (modal) modal.style.display = "flex";
+}
+
+function closeCustomerReceiptModal() {
+    const modal = document.getElementById("customerReceiptModal");
+    if (modal) modal.style.display = "none";
+}
+
+function printCustomerReceipt() {
+    window.print();
+}
+
+async function reorderCustomerOrder(orderId) {
+    const order = customerOrders.find(o => String(o.id) === String(orderId))
+        || getSharedOrders().find(o => String(o.id) === String(orderId));
+    if (!order || !order.order_items || !order.order_items.length) {
+        showToast("Could not reorder items.", "error");
+        return;
+    }
+
+    for (const item of order.order_items) {
+        const dishName = item.menu_items?.name;
+        const matchedDish = menuItems.find(m => m.name.toLowerCase() === (dishName || "").toLowerCase())
+            || {
+                id: item.menu_item_id || ("reord-" + Math.random().toString(36).substr(2, 5)),
+                name: dishName || "Reordered Dish",
+                price: Number(item.unit_price) || 199,
+                restaurant: order.restaurants?.name || "Partner Kitchen"
+            };
+
+        const existingIndex = cart.findIndex(c => c.menu?.name === matchedDish.name);
+        if (existingIndex > -1) {
+            cart[existingIndex].quantity += Number(item.quantity || 1);
+        } else {
+            cart.push({
+                menu_item_id: matchedDish.id,
+                quantity: Number(item.quantity || 1),
+                menu: matchedDish
+            });
+        }
+    }
+
+    await persistCart();
+    renderCartItems();
+    updateCartCount();
+    toggleCart();
+    showToast("🎉 Items added to cart! Ready for checkout.", "success", 3000);
+}
 
 // ================= THEME MANAGEMENT (DARK / LIGHT MODE) =================
 let currentTheme = "light";
@@ -666,6 +1227,18 @@ function renderFoodMenu(items) {
     grid.innerHTML = "";
 
     if (!items.length) {
+        if (activeCategory === "Favorites") {
+            grid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; background: var(--card-bg); border-radius: 20px; border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text-main);">
+                    <span style="font-size: 44px; display: block; margin-bottom: 12px;">❤️</span>
+                    <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 6px;">No favorite dishes saved yet</h3>
+                    <p style="color: var(--text-muted); font-size: 14px;">Tap the ❤️ heart icon on any dish to save your favorite meals here for 1-click reordering!</p>
+                    <button class="btn-primary" onclick="filterCategory('All')" style="margin-top: 16px;">Browse All Dishes</button>
+                </div>
+            `;
+            return;
+        }
+
         grid.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; background: var(--card-bg); border-radius: 20px; border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text-main);">
                 <span style="font-size: 44px; display: block; margin-bottom: 12px;">🔍</span>
@@ -702,10 +1275,17 @@ function renderFoodMenu(items) {
             ? `<button class="btn-add" id="btnAdd-${dish.id}" onclick="event.stopPropagation(); handleItemOrderClick('${dish.id}')">Add +</button>`
             : `<button class="btn-add btn-disabled" onclick="event.stopPropagation(); showToast('Restaurant is currently offline.', 'warning');" disabled>Closed</button>`;
 
+        const isLiked = isDishLiked(dish.id);
+        const likeCount = getDishLikeCount(dish.id);
+
         card.innerHTML = `
             <div class="card-img-wrap">
                 <img src="${safeImg}" alt="${escapeHtml(dish.name)}" loading="lazy" onerror="handleImageError(this, '${escapeHtml(dish.category)}')">
                 ${closedOverlay}
+                <button class="btn-dish-like ${isLiked ? "is-liked" : ""}" data-dish-id="${dish.id}" onclick="toggleLikeDish('${dish.id}', event)" aria-label="${isLiked ? "Unlike dish" : "Like dish"}" title="${isLiked ? "Remove from favorites" : "Add to favorites"}" type="button">
+                    <span class="like-heart-icon">${isLiked ? "❤️" : "🤍"}</span>
+                    <span class="like-count-num">${likeCount}</span>
+                </button>
                 <span class="restaurant-badge">🏪 ${escapeHtml(dish.restaurant)}</span>
                 <span class="card-chip">${escapeHtml(dish.category)}</span>
             </div>
@@ -796,6 +1376,8 @@ function filterMenu() {
                 btn.classList.toggle("active", btnCat === "All" || btnCat.includes("All"));
             });
         }
+    } else if (activeCategory === "Favorites") {
+        filtered = filtered.filter(i => isDishLiked(i.id));
     } else if (activeCategory !== "All") {
         filtered = filtered.filter(i => (i.category || "").toLowerCase() === activeCategory.toLowerCase());
     }
@@ -803,8 +1385,13 @@ function filterMenu() {
     const countBadge = document.getElementById("menuCountBadge");
     if (countBadge) {
         let countText = `${filtered.length} dishes`;
-        if (activeDietaryFilter === "veg") countText += " (Pure Veg)";
-        else if (activeDietaryFilter === "nonveg") countText += " (Non-Veg)";
+        if (activeCategory === "Favorites") {
+            countText = `${filtered.length} favorite ${filtered.length === 1 ? "dish" : "dishes"}`;
+        } else if (activeDietaryFilter === "veg") {
+            countText += " (Pure Veg)";
+        } else if (activeDietaryFilter === "nonveg") {
+            countText += " (Non-Veg)";
+        }
         countBadge.textContent = countText;
     }
 
@@ -846,6 +1433,16 @@ function openProductDetailModal(id) {
 
     const addBtn = document.getElementById("modalAddToCartBtn");
     const buyBtn = document.getElementById("modalBuyNowBtn");
+
+    const isLikedModal = isDishLiked(dish.id);
+    const modalLikeBtn = document.getElementById("modalDishLikeBtn");
+    if (modalLikeBtn) {
+        modalLikeBtn.setAttribute("data-dish-id", dish.id);
+        modalLikeBtn.classList.toggle("is-liked", isLikedModal);
+        modalLikeBtn.setAttribute("title", isLikedModal ? "Remove from favorites" : "Favorite this dish");
+        const icon = modalLikeBtn.querySelector(".like-heart-icon");
+        if (icon) icon.textContent = isLikedModal ? "❤️" : "🤍";
+    }
 
     if (!isOpen) {
         addBtn.disabled = true;
@@ -921,6 +1518,21 @@ function openBuyOrderPage(id) {
     if (storeStatusPill) {
         storeStatusPill.textContent = isOpen ? "🟢 Kitchen Online" : "🔴 Store Offline";
         storeStatusPill.style.background = isOpen ? "rgba(5, 150, 105, 0.95)" : "rgba(225, 29, 72, 0.95)";
+    }
+
+    // Sync Like Button on Buy Page
+    const isLikedBuy = isDishLiked(dish.id);
+    const likeCountBuy = getDishLikeCount(dish.id);
+    const buyLikeBtn = document.getElementById("buyDishLikeBtn");
+    if (buyLikeBtn) {
+        buyLikeBtn.classList.toggle("is-liked", isLikedBuy);
+        buyLikeBtn.setAttribute("title", isLikedBuy ? "Remove from favorites" : "Add to favorites");
+        const icon = buyLikeBtn.querySelector(".buy-like-icon");
+        if (icon) icon.textContent = isLikedBuy ? "❤️" : "🤍";
+        const label = buyLikeBtn.querySelector(".buy-like-label");
+        if (label) label.textContent = isLikedBuy ? "Liked" : "Favorite";
+        const countEl = document.getElementById("buyDishLikeCount");
+        if (countEl) countEl.textContent = likeCountBuy;
     }
 
     // Restaurant profile card
@@ -1036,8 +1648,8 @@ function updateBuyPageBill() {
     if (btnPriceEl) btnPriceEl.textContent = money(grandTotal);
 }
 
-function useCurrentLocationAddress() {
-    const addrField = document.getElementById("buyDeliveryAddress");
+function useCurrentLocationAddress(targetId = "buyDeliveryAddress") {
+    const addrField = document.getElementById(targetId) || document.getElementById("buyDeliveryAddress") || document.getElementById("deliveryAddress");
     if (!addrField) return;
     const saved = localStorage.getItem("qb_saved_address");
     if (saved) {
@@ -1112,7 +1724,10 @@ async function placeOrderFromBuyPage() {
                 menu_items: { name: currentBuyDish.name }
             }]
         };
-        customerOrders.unshift(mockOrder);
+        const shared = getSharedOrders();
+        shared.unshift(mockOrder);
+        saveSharedOrders(shared);
+        customerOrders = shared;
         showToast(`Order #${orderNum} placed successfully! Tracking your delivery.`, "success", 4000);
         showCustomerOrders();
         if (placeBtn) placeBtn.disabled = false;
@@ -1361,12 +1976,16 @@ function renderOtherRestaurantSuggestions(currentDish) {
             : `<span class="badge-nonveg-card sugg-diet-badge"><span class="dietary-icon nonveg"></span> Non-Veg</span>`;
         const cleanDesc = (dish.desc || "").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
         const shortDesc = cleanDesc.length > 55 ? cleanDesc.substring(0, 55) + "..." : cleanDesc;
+        const isLiked = isDishLiked(dish.id);
 
         return `
             <div class="suggestion-card" onclick="openBuyOrderPage('${dish.id}')">
                 <div class="sugg-img-wrap">
                     <img src="${safeImg}" alt="${escapeHtml(dish.name)}" loading="lazy" onerror="handleImageError(this, '${escapeHtml(dish.category)}')">
                     ${dietBadge}
+                    <button class="btn-dish-like sugg-like-btn ${isLiked ? "is-liked" : ""}" data-dish-id="${dish.id}" onclick="toggleLikeDish('${dish.id}', event)" aria-label="${isLiked ? "Unlike dish" : "Like dish"}" title="${isLiked ? "Remove from favorites" : "Add to favorites"}" type="button">
+                        <span class="like-heart-icon">${isLiked ? "❤️" : "🤍"}</span>
+                    </button>
                     <span class="sugg-res-badge">🏪 ${escapeHtml(dish.restaurant)}</span>
                 </div>
                 <div class="sugg-body">
@@ -1682,11 +2301,39 @@ function renderCartItems() {
         container.appendChild(row);
     });
 
-    const deliveryFee = subtotal >= 199 ? 0 : 30;
+    let couponDiscount = 0;
+    if (appliedCartCoupon) {
+        if (appliedCartCoupon.minOrder && subtotal < appliedCartCoupon.minOrder) {
+            appliedCartCoupon = null;
+        } else {
+            couponDiscount = Math.min(appliedCartCoupon.maxDiscount, Math.round(subtotal * (appliedCartCoupon.discountPct / 100)));
+        }
+    }
+
+    const deliveryFee = (subtotal - couponDiscount) >= 199 || subtotal >= 199 ? 0 : 30;
     const taxes = 15;
-    const grandTotal = subtotal + deliveryFee + taxes;
+    const grandTotal = Math.max(0, subtotal - couponDiscount + deliveryFee + taxes);
 
     if (subtotalEl) subtotalEl.textContent = money(subtotal);
+
+    const discountRow = document.getElementById("billDiscountRow");
+    const discountVal = document.getElementById("billDiscount");
+    if (discountRow && discountVal) {
+        discountRow.style.display = couponDiscount > 0 ? "flex" : "none";
+        discountVal.textContent = `-${money(couponDiscount)}`;
+    }
+
+    const appliedBadge = document.getElementById("appliedCouponBadge");
+    const appliedCodeEl = document.getElementById("appliedCouponCode");
+    if (appliedBadge && appliedCodeEl) {
+        if (appliedCartCoupon) {
+            appliedBadge.style.display = "flex";
+            appliedCodeEl.textContent = `${appliedCartCoupon.code} (${money(couponDiscount)} saved)`;
+        } else {
+            appliedBadge.style.display = "none";
+        }
+    }
+
     if (deliveryEl) {
         deliveryEl.textContent = deliveryFee === 0 ? "FREE" : money(deliveryFee);
         deliveryEl.className = deliveryFee === 0 ? "text-green" : "";
@@ -1782,27 +2429,45 @@ async function placeOrder() {
         placeBtn.textContent = "Placing Order...";
     }
 
+    const notes = (document.getElementById("cartSpecialNotes")?.value || "").trim();
+    const paymentMethod = document.querySelector('input[name="cartPaymentMethod"]:checked')?.value || "cod";
+
     const isDemoCustomer = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
     if (isDemoCustomer) {
         const orderNum = "QB-" + Math.floor(100000 + Math.random() * 900000);
         const subtotal = cart.reduce((sum, item) => sum + Number(item.menu?.price || 0) * Number(item.quantity || 1), 0);
-        const deliveryFee = subtotal >= 199 ? 0 : 30;
-        const grandTotal = subtotal + deliveryFee + 15;
+        let couponDiscount = 0;
+        if (appliedCartCoupon) {
+            if (!appliedCartCoupon.minOrder || subtotal >= appliedCartCoupon.minOrder) {
+                couponDiscount = Math.min(appliedCartCoupon.maxDiscount, Math.round(subtotal * (appliedCartCoupon.discountPct / 100)));
+            }
+        }
+        const deliveryFee = (subtotal - couponDiscount) >= 199 || subtotal >= 199 ? 0 : 30;
+        const grandTotal = Math.max(0, subtotal - couponDiscount + deliveryFee + 15);
         const mockOrder = {
             id: "demo-order-" + Date.now(),
             order_number: orderNum,
             total_amount: grandTotal,
+            discount_amount: couponDiscount,
+            coupon_code: appliedCartCoupon?.code || null,
             status: "pending",
             delivery_address: deliveryAddress,
+            notes: notes,
+            payment_method: paymentMethod,
             created_at: new Date().toISOString(),
             restaurants: { name: cart[0]?.menu?.restaurant || "QuickBite Partner Kitchen" },
+            restaurant_id: cart[0]?.restaurant_id || cart[0]?.menu?.restaurant_id || null,
             order_items: cart.map(item => ({
                 quantity: item.quantity,
                 unit_price: item.menu?.price,
-                menu_items: { name: item.menu?.name }
+                menu_items: { name: item.menu?.name, category: item.menu?.category }
             }))
         };
-        customerOrders.unshift(mockOrder);
+        const shared = getSharedOrders();
+        shared.unshift(mockOrder);
+        saveSharedOrders(shared);
+        customerOrders = shared;
+        appliedCartCoupon = null;
         await clearCart();
         toggleCart();
         showToast(`Order #${orderNum} placed successfully! Tracking your delivery.`, "success", 4000);
@@ -1815,12 +2480,46 @@ async function placeOrder() {
     }
 
     try {
+        const subtotal = cart.reduce((sum, item) => sum + Number(item.menu?.price || 0) * Number(item.quantity || 1), 0);
+        let couponDiscount = 0;
+        if (appliedCartCoupon) {
+            if (!appliedCartCoupon.minOrder || subtotal >= appliedCartCoupon.minOrder) {
+                couponDiscount = Math.min(appliedCartCoupon.maxDiscount, Math.round(subtotal * (appliedCartCoupon.discountPct / 100)));
+            }
+        }
+        const deliveryFee = (subtotal - couponDiscount) >= 199 || subtotal >= 199 ? 0 : 30;
+
         const { data, error } = await db.rpc("create_order_from_cart", {
             p_delivery_address: deliveryAddress
         });
 
         if (error) throw error;
 
+        // Sync with local shared orders for instant cross-portal view
+        const syncedOrder = {
+            id: "ord-" + Date.now(),
+            order_number: "QB-" + (data || Math.floor(100000 + Math.random() * 900000)),
+            total_amount: Math.max(0, subtotal - couponDiscount + deliveryFee + 15),
+            discount_amount: couponDiscount,
+            coupon_code: appliedCartCoupon?.code || null,
+            status: "pending",
+            delivery_address: deliveryAddress,
+            notes: notes,
+            payment_method: paymentMethod,
+            created_at: new Date().toISOString(),
+            restaurants: { name: cart[0]?.menu?.restaurant || "Partner Kitchen" },
+            restaurant_id: cart[0]?.restaurant_id || cart[0]?.menu?.restaurant_id || null,
+            order_items: cart.map(item => ({
+                quantity: item.quantity,
+                unit_price: item.menu?.price,
+                menu_items: { name: item.menu?.name, category: item.menu?.category }
+            }))
+        };
+        const shared = getSharedOrders();
+        shared.unshift(syncedOrder);
+        saveSharedOrders(shared);
+
+        appliedCartCoupon = null;
         await clearCart();
         toggleCart();
         showToast(`Order #${data} placed successfully! Tracking your order.`, "success", 4000);
@@ -1838,9 +2537,10 @@ async function placeOrder() {
 }
 
 async function loadCustomerOrders() {
-    if (!currentUser || !db) return;
+    if (!currentUser) return;
 
-    if (currentUser.id.startsWith("demo-user-")) {
+    if (currentUser.id && currentUser.id.startsWith("demo-user-")) {
+        customerOrders = getSharedOrders();
         const activeCount = customerOrders.filter(o => !["delivered", "cancelled"].includes(o.status)).length;
         const navBadge = document.getElementById("navOrdersBadge");
         if (navBadge) {
@@ -1859,7 +2559,15 @@ async function loadCustomerOrders() {
             .order("created_at", { ascending: false });
 
         if (error) throw error;
-        customerOrders = data || [];
+        const remoteOrders = data || [];
+        const localShared = getSharedOrders();
+        const combined = [...remoteOrders];
+        localShared.forEach(lo => {
+            if (!combined.some(co => co.id === lo.id || co.order_number === lo.order_number)) {
+                combined.push(lo);
+            }
+        });
+        customerOrders = combined;
 
         // Update nav badge count for active orders
         const activeCount = customerOrders.filter(o => !["delivered", "cancelled"].includes(o.status)).length;
@@ -1872,6 +2580,8 @@ async function loadCustomerOrders() {
         renderCustomerOrders();
     } catch (err) {
         console.error("Error loading customer orders:", err);
+        customerOrders = getSharedOrders();
+        renderCustomerOrders();
     }
 }
 
@@ -1940,11 +2650,52 @@ function renderCustomerOrders() {
 
         const statusClass = isCancelled ? "status-cancelled" : order.status === "delivered" ? "status-done" : order.status === "confirmed" ? "status-confirmed" : order.status === "picked_up" ? "status-transit" : "status-prep";
 
+        // Dynamic ETA and status message
+        const isFullRefund = (order.refund_pct === 100 || (order.cancellation_fee !== undefined && Number(order.cancellation_fee) === 0));
+        let etaBadgeHtml = "";
+        if (isCancelled) {
+            etaBadgeHtml = `<div class="order-eta-badge" style="background:rgba(239, 68, 68, 0.1); color:#ef4444;">🚫 Order Cancelled &bull; ${isFullRefund ? "100% Full Refund" : "70% Refund"} Initiated</div>`;
+        } else if (order.status === "pending") {
+            etaBadgeHtml = `<div class="order-eta-badge">⏱️ Kitchen confirming order</div>`;
+        } else if (order.status === "confirmed") {
+            etaBadgeHtml = `<div class="order-eta-badge">✓ Order confirmed &bull; Pre-cooking queue</div>`;
+        } else if (order.status === "preparing") {
+            etaBadgeHtml = `<div class="order-eta-badge">👨‍🍳 Cooking in kitchen &bull; Arriving in ~15-20 mins</div>`;
+        } else if (order.status === "ready_for_pickup") {
+            etaBadgeHtml = `<div class="order-eta-badge">📦 Food packed &bull; Rider picking up</div>`;
+        } else if (order.status === "picked_up") {
+            etaBadgeHtml = `<div class="order-eta-badge">🛵 Rider is on the way &bull; Arriving in ~8-12 mins</div>`;
+        } else if (order.status === "delivered") {
+            etaBadgeHtml = `<div class="order-eta-badge" style="background:rgba(16, 185, 129, 0.1); color:#059669;">✅ Delivered hot &amp; fresh</div>`;
+        }
+
+        const refundAmt = order.refund_amount !== undefined ? order.refund_amount : (isFullRefund ? Number(order.total_amount || 0) : Math.round(Number(order.total_amount || 0) * 0.7));
+        const feeAmt = order.cancellation_fee !== undefined ? order.cancellation_fee : (isFullRefund ? 0 : Math.round(Number(order.total_amount || 0) * 0.3));
+        const refundBoxHtml = isCancelled ? `
+            <div class="order-refund-box" style="margin-top:10px; padding:10px 12px; background:${isFullRefund ? "rgba(16, 185, 129, 0.06)" : "rgba(239, 68, 68, 0.05)"}; border:1px solid ${isFullRefund ? "rgba(16, 185, 129, 0.25)" : "rgba(239, 68, 68, 0.25)"}; border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong style="color:${isFullRefund ? "#059669" : "#ef4444"}; font-size:13px;">💰 ${isFullRefund ? "100% Full Refund" : "70% Refund"}: ${money(refundAmt)}</strong>
+                    <span style="font-size:11px; color:${isFullRefund ? "#059669" : "var(--text-muted)"}; font-weight:700;">${isFullRefund ? "Fee (0%): ₹0" : `Fee (30%): -${money(feeAmt)}`}</span>
+                </div>
+                <p style="margin:4px 0 0; font-size:11.5px; color:var(--text-muted); line-height:1.4;">${isFullRefund ? "100% Full Refund credited (cancelled before cooking starts). In account in 2-4 business days." : "70% Refund credited (cancelled while kitchen preparing). In account in 2-4 business days."}</p>
+            </div>
+        ` : "";
+
+        // Cancel order eligibility: allowed before cooking (100% refund) and while preparing (70% refund)
+        const canCancel = (order.status === "pending" || order.status === "confirmed" || order.status === "preparing");
+        const isCurrentPreparing = (order.status === "preparing");
+        const cancelBtnHtml = canCancel ? `
+            <button class="btn-cancel-order-customer" onclick="openCancelOrderModal('${order.id}')" title="${isCurrentPreparing ? 'Kitchen is preparing (70% refund applies)' : 'Cancel order before cooking starts (100% full refund)'}">
+                <span>✕ Cancel Order (${isCurrentPreparing ? "70% Refund" : "100% Full Refund"})</span>
+            </button>
+        ` : "";
+
         card.innerHTML = `
             <div class="order-card-header">
                 <div class="order-title-group">
                     <h3>Order #${escapeHtml(order.order_number)}</h3>
                     <div class="order-meta-info">🏪 <strong>${escapeHtml(restaurantName)}</strong> &bull; ${orderDate}</div>
+                    ${etaBadgeHtml}
                 </div>
                 <div>
                     <span class="delivery-status ${statusClass}">${escapeHtml(STATUS_LABELS[order.status] || order.status)}</span>
@@ -1961,16 +2712,30 @@ function renderCustomerOrders() {
                 <div class="order-delivery-address-box">
                     <strong style="display:block; margin-bottom:4px; font-size:12px;">DELIVERY ADDRESS</strong>
                     📍 ${escapeHtml(order.delivery_address || "Address not specified")}
+                    ${order.notes ? `<div style="margin-top:6px; font-size:12px; color:var(--text-muted); background:rgba(255,255,255,0.04); padding:4px 8px; border-radius:6px; border:1px dashed var(--border);">📝 <em>"${escapeHtml(order.notes)}"</em></div>` : ""}
+                    ${order.payment_method ? `<div style="margin-top:5px; font-size:11px; color:var(--text-muted);">💳 Paid via: <strong>${order.payment_method === "cod" ? "Cash on Delivery" : order.payment_method === "upi" ? "UPI / Online" : "Credit / Debit Card"}</strong></div>` : ""}
+                    ${refundBoxHtml}
                 </div>
             </div>
 
             <div class="order-card-footer">
                 <div>
-                    <span style="font-size:13px; color:var(--text-muted);">Total Amount Paid:</span>
-                    <strong class="order-total-amount">${money(order.total_amount)}</strong>
+                    <span style="font-size:13px; color:var(--text-muted);">${isCancelled ? "Original Amount:" : "Total Amount Paid:"}</span>
+                    <strong class="order-total-amount" style="${isCancelled ? "text-decoration:line-through;color:var(--text-muted);" : ""}">${money(order.total_amount)}</strong>
                 </div>
-                <div>
-                    ${order.status === "pending" ? `<button class="btn-cancel-order" onclick="cancelCustomerOrder('${order.id}')">Cancel Order</button>` : ""}
+                <div class="order-card-action-btns">
+                    ${cancelBtnHtml}
+                    <button class="btn-order-support" onclick="openOrderSupportModal('${order.id}')" title="Need assistance with this order?">
+                        <span>🎧 Need Help?</span>
+                    </button>
+                    ${order.status === "delivered" ? `
+                        <button class="btn-order-again" onclick="reorderCustomerOrder('${order.id}')" title="Reorder these items">
+                            <span>🔁 Reorder</span>
+                        </button>
+                    ` : ""}
+                    <button class="btn-order-receipt" onclick="openCustomerReceiptModal('${order.id}')" title="View & Print Invoice">
+                        <span>🧾 View Receipt</span>
+                    </button>
                 </div>
             </div>
         `;
@@ -1979,33 +2744,8 @@ function renderCustomerOrders() {
     });
 }
 
-async function cancelCustomerOrder(orderId) {
-    const ok = confirm("Are you sure you want to cancel this order?");
-    if (!ok) return;
-
-    if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
-        const order = customerOrders.find(o => o.id === orderId);
-        if (order) order.status = "cancelled";
-        showToast("Order cancelled successfully.", "info");
-        await loadCustomerOrders();
-        return;
-    }
-
-    try {
-        // Try safe RPC first
-        const { error: rpcErr } = await db.rpc("cancel_customer_order", { p_order_id: orderId });
-        if (rpcErr) {
-            // Fallback direct update under customer RLS policy
-            const { error: updateErr } = await db.from("orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "pending");
-            if (updateErr) throw updateErr;
-        }
-
-        showToast("Order cancelled successfully.", "info");
-        await loadCustomerOrders();
-    } catch (err) {
-        console.error("Cancel order error:", err);
-        showToast(err.message || "Could not cancel order.", "error");
-    }
+function cancelCustomerOrder(orderId) {
+    openCancelOrderModal(orderId);
 }
 
 // ================= ENTERPRISE RESTAURANT PARTNER PORTAL =================
@@ -2375,17 +3115,32 @@ function renderRestaurantMenuTable(items) {
 
 async function loadRestaurantOrders() {
     const rid = getActiveRestaurantId();
-    if (!rid || !db) return;
+    if (!rid && !currentUser) return;
 
     try {
-        const { data, error } = await db
-            .from("orders")
-            .select("id,order_number,total_amount,status,delivery_address,created_at,profiles!orders_customer_id_fkey(full_name,phone),order_items(quantity,unit_price,menu_items(name,category))")
-            .eq("restaurant_id", rid)
-            .order("created_at", { ascending: false });
+        let remoteOrders = [];
+        if (db && rid) {
+            try {
+                const { data, error } = await db
+                    .from("orders")
+                    .select("id,order_number,total_amount,status,delivery_address,created_at,profiles!orders_customer_id_fkey(full_name,phone),order_items(quantity,unit_price,menu_items(name,category))")
+                    .eq("restaurant_id", rid)
+                    .order("created_at", { ascending: false });
 
-        if (error) throw error;
-        activeRestaurantOrders = data || [];
+                if (!error && data) remoteOrders = data;
+            } catch (dbErr) {
+                console.warn("DB orders fetch warning:", dbErr);
+            }
+        }
+
+        const localShared = getSharedOrders().filter(o => !rid || !o.restaurant_id || o.restaurant_id === rid || (currentRestaurantRecord && o.restaurants?.name === currentRestaurantRecord.name));
+        const combined = [...remoteOrders];
+        localShared.forEach(lo => {
+            if (!combined.some(co => co.id === lo.id || co.order_number === lo.order_number)) {
+                combined.push(lo);
+            }
+        });
+        activeRestaurantOrders = combined;
 
         // Check if brand new pending order arrived
         const currentPending = activeRestaurantOrders.filter(o => o.status === "pending");
@@ -2575,17 +3330,17 @@ async function advanceRestaurantOrder(id, status, btnEl) {
     }
 
     try {
-        const { error } = await db.from("orders").update({ status: nextStatus }).eq("id", id);
-        if (error) {
-            if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
-                const ord = activeRestaurantOrders.find(o => o.id === id);
-                if (ord) ord.status = nextStatus;
-                showToast(`Order status updated: ${STATUS_LABELS[nextStatus]} ✓`, "success");
-                renderRestaurantOrders();
-                return;
-            }
-            throw error;
+        if (db) {
+            try {
+                await db.from("orders").update({ status: nextStatus }).eq("id", id);
+            } catch (e) {}
         }
+
+        updateSharedOrderStatus(id, nextStatus);
+
+        const ord = activeRestaurantOrders.find(o => o.id === id);
+        if (ord) ord.status = nextStatus;
+
         showToast(`Order status updated: ${STATUS_LABELS[nextStatus]} ✓`, "success");
         await loadRestaurantOrders();
     } catch (err) {
@@ -2608,17 +3363,17 @@ async function declineRestaurantOrder(id, btnEl) {
     }
 
     try {
-        const { error } = await db.from("orders").update({ status: "cancelled" }).eq("id", id);
-        if (error) {
-            if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
-                const ord = activeRestaurantOrders.find(o => o.id === id);
-                if (ord) ord.status = "cancelled";
-                showToast("Order declined.", "info");
-                renderRestaurantOrders();
-                return;
-            }
-            throw error;
+        if (db) {
+            try {
+                await db.from("orders").update({ status: "cancelled" }).eq("id", id);
+            } catch (e) {}
         }
+
+        updateSharedOrderStatus(id, "cancelled");
+
+        const ord = activeRestaurantOrders.find(o => o.id === id);
+        if (ord) ord.status = "cancelled";
+
         showToast("Order declined.", "info");
         await loadRestaurantOrders();
     } catch (err) {
@@ -3055,17 +3810,32 @@ async function toggleCurrentRestaurantOpen() {
 // ================= DELIVERY FLEET (RIDER) PORTAL =================
 async function loadRiderOrders() {
     if (currentRole !== "rider" && currentRole !== "admin") return;
-    if (!db || !currentUser) return;
+    if (!currentUser) return;
 
     try {
-        const { data, error } = await db
-            .from("orders")
-            .select("id,order_number,total_amount,status,delivery_address,rider_id,created_at,profiles!orders_customer_id_fkey(full_name),restaurants(name),order_items(quantity,menu_items(name))")
-            .in("status", ["ready_for_pickup", "picked_up", "delivered"])
-            .order("created_at", { ascending: false });
+        let remoteOrders = [];
+        if (db) {
+            try {
+                const { data, error } = await db
+                    .from("orders")
+                    .select("id,order_number,total_amount,status,delivery_address,rider_id,created_at,profiles!orders_customer_id_fkey(full_name),restaurants(name),order_items(quantity,menu_items(name))")
+                    .in("status", ["ready_for_pickup", "picked_up", "delivered"])
+                    .order("created_at", { ascending: false });
 
-        if (error) throw error;
-        riderOrders = data || [];
+                if (!error && data) remoteOrders = data;
+            } catch (dbErr) {
+                console.warn("DB rider orders warning:", dbErr);
+            }
+        }
+
+        const localShared = getSharedOrders().filter(o => ["ready_for_pickup", "picked_up", "delivered"].includes(o.status));
+        const combined = [...remoteOrders];
+        localShared.forEach(lo => {
+            if (!combined.some(co => co.id === lo.id || co.order_number === lo.order_number)) {
+                combined.push(lo);
+            }
+        });
+        riderOrders = combined;
 
         // Compute fleet stats
         const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
@@ -3163,7 +3933,7 @@ async function claimRiderOrder(orderId) {
         const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
         let claimed = false;
 
-        if (!isDemoRider) {
+        if (!isDemoRider && db) {
             try {
                 const { data, error } = await db.rpc("claim_delivery_order", { p_order_id: orderId });
                 if (!error && data) claimed = true;
@@ -3172,12 +3942,19 @@ async function claimRiderOrder(orderId) {
             }
         }
 
-        if (!claimed) {
-            // Update order status directly
-            const updatePayload = { status: "picked_up" };
-            if (!isDemoRider) updatePayload.rider_id = currentUser.id;
-            const { error: updErr } = await db.from("orders").update(updatePayload).eq("id", orderId);
-            if (updErr) throw updErr;
+        if (!claimed && db && !isDemoRider) {
+            try {
+                const updatePayload = { status: "picked_up", rider_id: currentUser.id };
+                await db.from("orders").update(updatePayload).eq("id", orderId);
+            } catch (e) {}
+        }
+
+        updateSharedOrderStatus(orderId, "picked_up", currentUser?.id || "demo-rider");
+
+        const ord = riderOrders.find(o => o.id === orderId);
+        if (ord) {
+            ord.status = "picked_up";
+            ord.rider_id = currentUser?.id || "demo-rider";
         }
 
         showToast("Order claimed! Pick up meals from the kitchen.", "success");
@@ -3192,12 +3969,18 @@ async function claimRiderOrder(orderId) {
 async function completeRiderOrder(orderId) {
     try {
         const isDemoRider = currentUser && currentUser.id && currentUser.id.startsWith("demo-user-");
-        let query = db.from("orders").update({ status: "delivered" }).eq("id", orderId);
-        if (!isDemoRider) {
-            query = query.eq("rider_id", currentUser.id);
+        if (db && !isDemoRider) {
+            try {
+                let query = db.from("orders").update({ status: "delivered" }).eq("id", orderId);
+                query = query.eq("rider_id", currentUser.id);
+                await query;
+            } catch (e) {}
         }
-        const { error } = await query;
-        if (error) throw error;
+
+        updateSharedOrderStatus(orderId, "delivered");
+
+        const ord = riderOrders.find(o => o.id === orderId);
+        if (ord) ord.status = "delivered";
 
         showToast("🎉 Delivery confirmed! Great work. Order completed.", "success", 4000);
         switchRiderTab("history");
@@ -3211,19 +3994,39 @@ async function completeRiderOrder(orderId) {
 // ================= PLATFORM ADMIN DASHBOARD =================
 async function loadAdminDashboard() {
     if (currentRole !== "admin") return;
-    if (!db) return;
 
     try {
-        const [ordersRes, itemsRes, profilesRes] = await Promise.all([
-            db.from("orders").select("id,order_number,total_amount,status,delivery_address,created_at,profiles!orders_customer_id_fkey(full_name),restaurants(name),order_items(quantity,menu_items(name))").order("created_at", { ascending: false }),
-            db.from("menu_items").select("id", { count: "exact", head: true }),
-            db.from("profiles").select("id,role", { count: "exact" })
-        ]);
+        let remoteOrders = [];
+        let totalDishes = 0;
+        let totalUsers = 0;
 
-        allAdminOrders = ordersRes.data || [];
+        if (db) {
+            try {
+                const [ordersRes, itemsRes, profilesRes] = await Promise.all([
+                    db.from("orders").select("id,order_number,total_amount,status,delivery_address,created_at,profiles!orders_customer_id_fkey(full_name),restaurants(name),order_items(quantity,menu_items(name))").order("created_at", { ascending: false }),
+                    db.from("menu_items").select("id", { count: "exact", head: true }),
+                    db.from("profiles").select("id,role", { count: "exact" })
+                ]);
+                if (ordersRes?.data) remoteOrders = ordersRes.data;
+                totalDishes = itemsRes?.count || 0;
+                totalUsers = profilesRes?.count || (profilesRes?.data?.length || 0);
+            } catch (fetchErr) {
+                console.warn("DB admin fetch error:", fetchErr);
+            }
+        }
+
+        const localShared = getSharedOrders();
+        const combined = [...remoteOrders];
+        localShared.forEach(lo => {
+            if (!combined.some(co => co.id === lo.id || co.order_number === lo.order_number)) {
+                combined.push(lo);
+            }
+        });
+        allAdminOrders = combined;
+
         const totalRevenue = allAdminOrders.filter(o => o.status !== "cancelled").reduce((s, o) => s + Number(o.total_amount || 0), 0);
-        const totalDishes = itemsRes.count || 0;
-        const totalUsers = profilesRes.count || (profilesRes.data?.length || 0);
+        if (!totalDishes && menuItems) totalDishes = menuItems.length;
+        if (!totalUsers) totalUsers = 12;
 
         document.getElementById("statTotalOrders").textContent = allAdminOrders.length;
         document.getElementById("statRevenue").textContent = totalRevenue.toLocaleString("en-IN");
@@ -3309,19 +4112,16 @@ function renderAdminOrders() {
 async function updateAdminOrderStatus(orderId, newStatus) {
     if (!newStatus) return;
     try {
-        const { error } = await db.from("orders").update({ status: newStatus }).eq("id", orderId);
-        if (error) {
-            if (currentUser && currentUser.id && currentUser.id.startsWith("demo-user-")) {
-                const ord = (adminOrders || []).find(o => o.id === orderId);
-                if (ord) ord.status = newStatus;
-                showToast(`Order status updated to: ${STATUS_LABELS[newStatus]} (Demo Mode)`, "success");
-                renderAdminOrders();
-                return;
-            }
-            throw error;
+        if (db) {
+            try {
+                await db.from("orders").update({ status: newStatus }).eq("id", orderId);
+            } catch (dbErr) {}
         }
-        showToast(`Order status updated to: ${STATUS_LABELS[newStatus]}`, "success");
-        await loadAdminDashboard();
+        updateSharedOrderStatus(orderId, newStatus);
+        const ord = (allAdminOrders || []).find(o => o.id === orderId);
+        if (ord) ord.status = newStatus;
+        showToast(`Order status updated to: ${STATUS_LABELS[newStatus] || newStatus}`, "success");
+        renderAdminOrders();
     } catch (err) {
         console.error("Update admin order error:", err);
         showToast(err.message || "Failed to update order status.", "error");
@@ -3493,8 +4293,13 @@ document.addEventListener("keydown", e => {
         closeAddDishModal();
         closeEditDishModal();
         closePrintKotModal();
+        closeOrderSupportModal();
+        closeCustomerReceiptModal();
+        closeCancelOrderModal();
         const cartModal = document.getElementById("cartModal");
         if (cartModal && cartModal.style.display === "flex") toggleCart();
+        const buyPage = document.getElementById("buyOrderSection");
+        if (buyPage && buyPage.style.display !== "none") closeBuyOrderPage();
     }
 });
 
@@ -3502,6 +4307,7 @@ document.addEventListener("keydown", e => {
 (async function init() {
     try {
         initTheme();
+        loadFavorites();
         await loadSession();
         await loadMenu();
         subscribeRealtime();
@@ -3521,3 +4327,30 @@ document.addEventListener("keydown", e => {
         showToast("QuickBite could not fully initialize. Check Supabase connection.", "error");
     }
 })();
+
+// Window Exports for Features & Event Handlers
+window.loadFavorites = loadFavorites;
+window.saveFavorites = saveFavorites;
+window.isDishLiked = isDishLiked;
+window.getDishLikeCount = getDishLikeCount;
+window.toggleLikeDish = toggleLikeDish;
+window.toggleLikeCurrentBuyDish = toggleLikeCurrentBuyDish;
+window.toggleLikeModalDish = toggleLikeModalDish;
+window.applyCartCoupon = applyCartCoupon;
+window.applyDirectCoupon = applyDirectCoupon;
+window.applyHeroCoupon = applyHeroCoupon;
+window.removeCartCoupon = removeCartCoupon;
+window.openOrderSupportModal = openOrderSupportModal;
+window.closeOrderSupportModal = closeOrderSupportModal;
+window.openCancelOrderModal = openCancelOrderModal;
+window.closeCancelOrderModal = closeCancelOrderModal;
+window.confirmCustomerCancelOrder = confirmCustomerCancelOrder;
+window.callRestaurantSupport = callRestaurantSupport;
+window.callRiderSupport = callRiderSupport;
+window.handleSupportTopic = handleSupportTopic;
+window.openCustomerReceiptModal = openCustomerReceiptModal;
+window.closeCustomerReceiptModal = closeCustomerReceiptModal;
+window.printCustomerReceipt = printCustomerReceipt;
+window.reorderCustomerOrder = reorderCustomerOrder;
+
+

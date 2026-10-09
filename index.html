@@ -114,9 +114,10 @@
             <!-- Hero Banner -->
             <div class="hero-banner">
                 <div class="hero-content">
-                    <div class="hero-pill-badge">
+                    <div class="hero-pill-badge" onclick="applyHeroCoupon()" style="cursor:pointer;" title="Tap to activate 50% discount!">
                         <span class="hero-pill-icon">⚡</span>
                         <span>FLAT 50% OFF &bull; USE CODE: <strong>QUICK50</strong></span>
+                        <span class="hero-coupon-action-hint">Tap to Apply</span>
                     </div>
                     <h1>Craving Something <span class="text-gradient">Delicious?</span></h1>
                     <p>Order fresh signature meals from top-rated restaurants delivered to your doorstep in 20 mins.</p>
@@ -151,6 +152,7 @@
                 <div class="category-strip-wrapper">
                     <div class="category-strip" id="categoryChips">
                         <button class="cat-chip active" data-category="All" onclick="filterCategory('All')">🍽️ All Items</button>
+                        <button id="favorite-chip" class="cat-chip favorite-chip" data-category="Favorites" onclick="filterCategory('Favorites')" title="View your favorite dishes">❤️ Favorites <span id="favCountBadge" class="fav-count-pill" style="display:none;">0</span></button>
                         <button class="cat-chip" data-category="Biryani & Meals" onclick="filterCategory('Biryani & Meals')">🍚 Biryani & Meals</button>
                         <button class="cat-chip" data-category="Pizzas" onclick="filterCategory('Pizzas')">🍕 Pizzas</button>
                         <button class="cat-chip" data-category="Rolls & Snacks" onclick="filterCategory('Rolls & Snacks')">🌯 Rolls & Snacks</button>
@@ -792,10 +794,17 @@
                                 <span class="buy-subheading" id="buyDishSubtitle">Chef's Signature Preparation</span>
                                 <h1 class="buy-dish-title" id="buyDishTitle">Delicious Dish</h1>
                             </div>
-                            <div class="buy-rating-pill">
-                                <span>⭐</span>
-                                <strong id="buyDishRating">4.8</strong>
-                                <span class="buy-review-count" id="buyDishReviewCountHead">(240+ reviews)</span>
+                            <div class="buy-title-actions">
+                                <div class="buy-rating-pill">
+                                    <span>⭐</span>
+                                    <strong id="buyDishRating">4.8</strong>
+                                    <span class="buy-review-count" id="buyDishReviewCountHead">(240+ reviews)</span>
+                                </div>
+                                <button id="buyDishLikeBtn" class="buy-like-btn" onclick="toggleLikeCurrentBuyDish()" type="button" title="Add to favorites">
+                                    <span class="buy-like-icon">🤍</span>
+                                    <span class="buy-like-label">Favorite</span>
+                                    <span class="buy-like-count-badge" id="buyDishLikeCount">0</span>
+                                </button>
                             </div>
                         </div>
 
@@ -1033,6 +1042,9 @@
                     <div class="detail-actions">
                         <button class="btn-outline-action" id="modalAddToCartBtn">Add to Cart</button>
                         <button class="btn-primary-action" id="modalBuyNowBtn">⚡ Buy Now</button>
+                        <button class="btn-like-modal" id="modalDishLikeBtn" type="button" onclick="toggleLikeModalDish()" title="Favorite this dish">
+                            <span class="like-heart-icon">🤍</span>
+                        </button>
                     </div>
                     <button class="btn-primary full-width" style="margin-top:12px; font-size:13px;" id="modalOpenFullBuyPageBtn" onclick="switchToBuyPageFromModal()">🌟 Open Full Order Page (Reviews & Suggestions) &rarr;</button>
                 </div>
@@ -1100,10 +1112,34 @@
 
             <!-- Checkout Section: visible when cart has items -->
             <div id="cartCheckoutSection">
+                <!-- Promo Code / Coupon Section -->
+                <div class="cart-coupon-card">
+                    <div class="coupon-header">
+                        <span class="coupon-icon">🎟️</span>
+                        <label for="couponCodeInput"><strong>Apply Coupon / Promo Code</strong></label>
+                    </div>
+                    <div class="coupon-input-group">
+                        <input type="text" id="couponCodeInput" placeholder="Try QUICK50" style="text-transform:uppercase;">
+                        <button type="button" class="btn-coupon-apply" onclick="applyCartCoupon()">Apply</button>
+                    </div>
+                    <div class="coupon-chips-row">
+                        <button type="button" class="coupon-chip" onclick="applyDirectCoupon('QUICK50')">⚡ QUICK50 (50% OFF)</button>
+                        <button type="button" class="coupon-chip" onclick="applyDirectCoupon('WELCOME20')">🎉 WELCOME20 (20% OFF)</button>
+                    </div>
+                    <div id="appliedCouponBadge" class="applied-coupon-row" style="display:none;">
+                        <span class="applied-coupon-tag">✓ Code <strong id="appliedCouponCode">QUICK50</strong> applied</span>
+                        <button type="button" class="btn-coupon-remove" onclick="removeCartCoupon()">&times; Remove</button>
+                    </div>
+                </div>
+
                 <div class="cart-bill-details" id="cartBillDetails">
                     <div class="bill-line">
                         <span>Items Subtotal</span>
                         <strong id="billSubtotal">₹0</strong>
+                    </div>
+                    <div class="bill-line" id="billDiscountRow" style="display:none;">
+                        <span>Coupon Discount</span>
+                        <strong class="text-green" id="billDiscount">-₹0</strong>
                     </div>
                     <div class="bill-line">
                         <span>Delivery Fee</span>
@@ -1116,8 +1152,34 @@
                 </div>
 
                 <div class="input-group checkout-address">
-                    <label for="deliveryAddress">Delivery Address <span class="required-asterisk">*</span></label>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label for="deliveryAddress" style="margin-bottom:0; font-weight:700;">Delivery Address <span class="required-asterisk">*</span></label>
+                        <button type="button" class="btn-link-action" onclick="useCurrentLocationAddress('deliveryAddress')" style="background:none; border:none; color:var(--primary); font-size:12px; font-weight:700; cursor:pointer;">📍 Quick Auto-fill</button>
+                    </div>
                     <textarea id="deliveryAddress" rows="2" placeholder="House / flat no, building, street, area, city, PIN code" required></textarea>
+                </div>
+
+                <div class="input-group" style="margin-top:10px;">
+                    <label for="cartSpecialNotes" style="display:block; margin-bottom:4px; font-weight:600; font-size:12px;">Delivery &amp; Cooking Instructions <span style="font-weight:normal; color:var(--text-muted);">(Optional)</span></label>
+                    <input type="text" id="cartSpecialNotes" placeholder="e.g. Leave with guard / avoid ringing bell / extra spicy" style="width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:8px; background:var(--input-bg, var(--card-bg)); color:var(--text-main); font-size:13px;">
+                </div>
+
+                <div class="input-group" style="margin-top:12px;">
+                    <label style="display:block; margin-bottom:6px; font-weight:700; font-size:12px;">Payment Method</label>
+                    <div class="cart-pay-grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+                        <label class="pay-option active" style="margin:0; padding:8px 4px; display:flex; flex-direction:column; align-items:center; gap:2px; text-align:center; cursor:pointer; font-size:11px;">
+                            <input type="radio" name="cartPaymentMethod" value="cod" checked onchange="updatePayOptionStyle(this)" style="margin:0;">
+                            <span>💵 Pay on Delivery</span>
+                        </label>
+                        <label class="pay-option" style="margin:0; padding:8px 4px; display:flex; flex-direction:column; align-items:center; gap:2px; text-align:center; cursor:pointer; font-size:11px;">
+                            <input type="radio" name="cartPaymentMethod" value="upi" onchange="updatePayOptionStyle(this)" style="margin:0;">
+                            <span>📱 UPI / GPay</span>
+                        </label>
+                        <label class="pay-option" style="margin:0; padding:8px 4px; display:flex; flex-direction:column; align-items:center; gap:2px; text-align:center; cursor:pointer; font-size:11px;">
+                            <input type="radio" name="cartPaymentMethod" value="card" onchange="updatePayOptionStyle(this)" style="margin:0;">
+                            <span>💳 Card</span>
+                        </label>
+                    </div>
                 </div>
 
                 <div class="cart-footer">
@@ -1303,6 +1365,201 @@
             </div>
             <div class="kot-actions">
                 <button class="btn-primary full-width" onclick="printKotSlip()">🖨️ Print Kitchen Slip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= CANCEL ORDER & 70% REFUND CONFIRMATION MODAL ================= -->
+    <div id="cancelOrderModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'cancelOrderModal')" style="display: none;">
+        <div class="modal-box cancel-modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3 style="color:#ef4444; display:flex; align-items:center; gap:8px;">⚠️ Cancel Order Confirmation</h3>
+                    <p id="cancelModalOrderNum" class="text-muted-sm">Order #QB-000000</p>
+                </div>
+                <button class="close-x" onclick="closeCancelOrderModal()">&times;</button>
+            </div>
+            <div class="cancel-modal-content">
+                <div id="cancelWarningBanner" class="cancel-warning-banner">
+                    <span id="cancelWarningIcon" class="warning-icon">⚠️</span>
+                    <div class="warning-text">
+                        <strong id="cancelWarningTitle">Cancellation Policy</strong>
+                        <p id="cancelWarningDesc">Kitchen preparation policy details...</p>
+                    </div>
+                </div>
+
+                <div class="refund-breakdown-card">
+                    <h4>Refund Calculation Breakdown</h4>
+                    <div class="refund-calc-row">
+                        <span>Original Paid Amount:</span>
+                        <strong id="cancelOriginalTotal">₹0</strong>
+                    </div>
+                    <div id="cancelDeductionRow" class="refund-calc-row text-danger">
+                        <span id="cancelDeductionLabel">Kitchen Prep Fee (30%):</span>
+                        <strong id="cancelDeductionFee">-₹0</strong>
+                    </div>
+                    <div class="refund-calc-divider"></div>
+                    <div class="refund-calc-row refund-highlight">
+                        <span id="cancelRefundLabel">Net Refund Amount:</span>
+                        <strong id="cancelRefundAmount" class="text-green">₹0</strong>
+                    </div>
+                    <p id="cancelRefundNote" class="refund-note">💡 ₹<span id="cancelRefundNoteAmount">0</span> will be refunded back to your original payment method in 2-4 business days.</p>
+                </div>
+
+                <div class="input-group" style="margin-top:14px;">
+                    <label for="cancelReasonSelect" style="display:block; margin-bottom:6px; font-weight:700; font-size:12px;">Reason for Cancellation:</label>
+                    <select id="cancelReasonSelect" style="width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--input-bg, var(--card-bg)); color:var(--text-main); font-size:13px;">
+                        <option value="Ordered by mistake">Ordered by mistake</option>
+                        <option value="Changed my mind">Changed my mind / Want to order something else</option>
+                        <option value="Incorrect address entered">Incorrect delivery address entered</option>
+                        <option value="Delivery time too long">Delivery time is too long</option>
+                        <option value="Other">Other reason</option>
+                    </select>
+                </div>
+
+                <div class="cancel-modal-actions" style="margin-top:18px; display:flex; flex-direction:column; gap:10px;">
+                    <button type="button" class="btn-danger full-width" id="btnConfirmCancellation" onclick="confirmCustomerCancelOrder()" style="padding:12px; font-size:14px; font-weight:700;">Confirm Cancellation &amp; Get Refund</button>
+                    <button type="button" class="btn-outline full-width" onclick="closeCancelOrderModal()" style="padding:10px; font-size:13px; font-weight:600;">Keep My Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= ORDER SUPPORT & CANCELLATION POLICY MODAL ================= -->
+    <div id="orderSupportModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'orderSupportModal')" style="display: none;">
+        <div class="modal-box support-modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3>Order Help & Support</h3>
+                    <p id="supportOrderNumber" class="text-muted-sm">Live Order Assistance</p>
+                </div>
+                <button class="close-x" onclick="closeOrderSupportModal()">&times;</button>
+            </div>
+            <div class="support-content">
+                <!-- Why No Cancel Button Policy Explanation -->
+                <div class="support-policy-card">
+                    <div class="support-policy-icon">🛡️</div>
+                    <div class="support-policy-text">
+                        <h4>Order Cancellation &amp; Refund Policy</h4>
+                        <p>Orders cancelled before the kitchen begins cooking receive a <strong>100% full refund</strong>. If cancelled while the kitchen is actively preparing food, a <strong>70% refund</strong> applies (a 30% kitchen prep &amp; ingredient fee is deducted). Once food is packed or out for delivery, cancellation is locked to prevent food wastage.</p>
+                    </div>
+                </div>
+
+                <!-- Direct Live Contacts -->
+                <div class="support-contact-grid">
+                    <div class="support-contact-box">
+                        <span class="support-box-icon">🏪</span>
+                        <h4>Restaurant Kitchen</h4>
+                        <p id="supportRestName" class="support-contact-name">Partner Restaurant</p>
+                        <button class="btn-primary-sm" onclick="callRestaurantSupport()">📞 Call Kitchen</button>
+                    </div>
+                    <div class="support-contact-box">
+                        <span class="support-box-icon">🛵</span>
+                        <h4>Delivery Fleet</h4>
+                        <p id="supportRiderStatus" class="support-contact-name">Fleet Dispatch</p>
+                        <button class="btn-primary-sm" onclick="callRiderSupport()">🛵 Contact Fleet</button>
+                    </div>
+                </div>
+
+                <!-- Interactive Quick Assistance Topics -->
+                <div class="support-faq-section">
+                    <h4>Need help with something else?</h4>
+                    <div class="support-faq-chips">
+                        <button type="button" class="faq-chip" onclick="handleSupportTopic('address')">📍 Update Drop-off Address</button>
+                        <button type="button" class="faq-chip" onclick="handleSupportTopic('delay')">⏱️ Check Delivery ETA</button>
+                        <button type="button" class="faq-chip" onclick="handleSupportTopic('diet')">🌿 Dietary / Allergy Request</button>
+                        <button type="button" class="faq-chip" onclick="handleSupportTopic('cutlery')">🍴 Cutlery & Packaging</button>
+                    </div>
+                    <div id="supportAnswerBox" class="support-answer-box" style="display:none;">
+                        <span class="support-answer-icon">💡</span>
+                        <p id="supportAnswerText"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= CUSTOMER INVOICE & RECEIPT MODAL ================= -->
+    <div id="customerReceiptModal" class="modal-backdrop" onclick="handleBackdropClick(event, 'customerReceiptModal')" style="display: none;">
+        <div class="modal-box receipt-modal-box">
+            <div class="modal-header">
+                <h3>Order Receipt & Invoice</h3>
+                <button class="close-x" onclick="closeCustomerReceiptModal()">&times;</button>
+            </div>
+            <div id="customerReceiptPaper" class="receipt-paper">
+                <div class="receipt-brand-header">
+                    <div class="receipt-logo">Quick<span class="logo-accent">Bite</span></div>
+                    <div class="receipt-type">CUSTOMER INVOICE</div>
+                </div>
+                <div class="receipt-meta-grid">
+                    <div>
+                        <span class="receipt-label">ORDER ID:</span>
+                        <strong id="receiptOrderNumber">#QB-000000</strong>
+                    </div>
+                    <div>
+                        <span class="receipt-label">CUSTOMER:</span>
+                        <strong id="receiptCustomerName">Valued Customer</strong>
+                    </div>
+                    <div>
+                        <span class="receipt-label">DATE & TIME:</span>
+                        <strong id="receiptOrderDate">--</strong>
+                    </div>
+                    <div>
+                        <span class="receipt-label">RESTAURANT:</span>
+                        <strong id="receiptRestName">Partner Kitchen</strong>
+                    </div>
+                    <div>
+                        <span class="receipt-label">STATUS:</span>
+                        <strong class="receipt-paid-badge" id="receiptStatusBadge">CONFIRMED</strong>
+                    </div>
+                </div>
+                <div class="receipt-divider"></div>
+                <table class="receipt-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;">QTY</th>
+                            <th style="text-align:left;">ITEM DESCRIPTION</th>
+                            <th style="text-align:right;">PRICE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="receiptItemsTbody">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+                <div class="receipt-divider"></div>
+                <div class="receipt-calc-rows">
+                    <div class="receipt-calc-line">
+                        <span>Items Subtotal:</span>
+                        <span id="receiptSubtotal">₹0</span>
+                    </div>
+                    <div class="receipt-calc-line" id="receiptDiscountRow" style="display:none;">
+                        <span>Coupon Discount:</span>
+                        <span id="receiptDiscount" class="text-green">-₹0</span>
+                    </div>
+                    <div class="receipt-calc-line">
+                        <span>Delivery Fee:</span>
+                        <span id="receiptDelivery">FREE</span>
+                    </div>
+                    <div class="receipt-calc-line">
+                        <span>Platform & Taxes:</span>
+                        <span>₹15</span>
+                    </div>
+                    <div class="receipt-calc-line receipt-grand-total">
+                        <strong>GRAND TOTAL:</strong>
+                        <strong id="receiptGrandTotal">₹0</strong>
+                    </div>
+                </div>
+                <div class="receipt-divider"></div>
+                <div class="receipt-address-box">
+                    <strong>DELIVERY DESTINATION:</strong>
+                    <p id="receiptDeliveryAddress"></p>
+                </div>
+                <div class="receipt-footer-text">
+                    Thank you for ordering with QuickBite! FSSAI Lic. #10020042001928 &bull; Express Food Network
+                </div>
+            </div>
+            <div class="receipt-modal-actions">
+                <button class="btn-primary full-width" onclick="printCustomerReceipt()">🖨️ Print / Save Receipt</button>
             </div>
         </div>
     </div>
