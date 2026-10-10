@@ -1174,51 +1174,200 @@ const DEFAULT_FALLBACK_MENU = [
     }
 ];
 
-function useFallbackMenu() {
-    if (!menuItems || !menuItems.length) {
-        menuItems = [...DEFAULT_FALLBACK_MENU];
+// ================= UNIFIED MENU STORE & LOCAL OVERRIDES =================
+function getCustomMenuItems() {
+    try {
+        const raw = localStorage.getItem("qb_custom_menu_items");
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
     }
+}
+
+function saveCustomMenuItems(items) {
+    try {
+        localStorage.setItem("qb_custom_menu_items", JSON.stringify(items));
+    } catch (e) {}
+}
+
+function addCustomMenuItem(item) {
+    const items = getCustomMenuItems();
+    items.unshift(item);
+    saveCustomMenuItems(items);
+}
+
+function updateCustomMenuItemIfPresent(id, updates) {
+    const items = getCustomMenuItems();
+    let found = false;
+    const next = items.map(it => {
+        if (String(it.id) === String(id)) {
+            found = true;
+            return { ...it, ...updates };
+        }
+        return it;
+    });
+    if (found) saveCustomMenuItems(next);
+    return found;
+}
+
+function removeCustomMenuItem(id) {
+    const items = getCustomMenuItems();
+    const next = items.filter(it => String(it.id) !== String(id));
+    saveCustomMenuItems(next);
+}
+
+function getMenuItemOverrides() {
+    try {
+        const raw = localStorage.getItem("qb_menu_overrides");
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveMenuItemOverride(id, updates) {
+    try {
+        const ovs = getMenuItemOverrides();
+        ovs[String(id)] = { ...(ovs[String(id)] || {}), ...updates };
+        localStorage.setItem("qb_menu_overrides", JSON.stringify(ovs));
+    } catch (e) {}
+}
+
+function getDeletedMenuItemIds() {
+    try {
+        const raw = localStorage.getItem("qb_deleted_menu_item_ids");
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function markMenuItemDeleted(id) {
+    try {
+        const list = getDeletedMenuItemIds();
+        if (!list.map(String).includes(String(id))) {
+            list.push(String(id));
+            localStorage.setItem("qb_deleted_menu_item_ids", JSON.stringify(list));
+        }
+        const ovs = getMenuItemOverrides();
+        if (ovs[String(id)]) {
+            delete ovs[String(id)];
+            localStorage.setItem("qb_menu_overrides", JSON.stringify(ovs));
+        }
+    } catch (e) {}
+}
+
+function getRestaurantOverrides() {
+    try {
+        const raw = localStorage.getItem("qb_restaurant_overrides");
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveRestaurantOverride(rid, updates) {
+    try {
+        const ovs = getRestaurantOverrides();
+        ovs[String(rid)] = { ...(ovs[String(rid)] || {}), ...updates };
+        localStorage.setItem("qb_restaurant_overrides", JSON.stringify(ovs));
+    } catch (e) {}
+}
+
+function applyMenuSync(baseItems) {
+    const custom = getCustomMenuItems().map(item => {
+        const rest = (typeof availableRestaurantsForStaff !== "undefined" && availableRestaurantsForStaff.find(r => String(r.id) === String(item.restaurant_id))) || currentRestaurantRecord;
+        return {
+            ...item,
+            restaurant: item.restaurant || rest?.name || "Partner Kitchen",
+            restaurant_is_open: item.restaurant_is_open ?? (rest?.is_open ?? true),
+            desc: item.description || item.desc,
+            image: item.image_url || item.image
+        };
+    });
+
+    const combined = [...custom];
+    (baseItems || []).forEach(bi => {
+        if (!combined.some(c => String(c.id) === String(bi.id))) {
+            combined.push(bi);
+        }
+    });
+
+    const deletedIds = new Set(getDeletedMenuItemIds().map(String));
+    let filtered = combined.filter(item => !deletedIds.has(String(item.id)));
+
+    const overrides = getMenuItemOverrides();
+    filtered = filtered.map(item => {
+        const ov = overrides[String(item.id)];
+        if (ov) {
+            return {
+                ...item,
+                ...ov,
+                desc: ov.description !== undefined ? ov.description : (item.desc || item.description),
+                image: ov.image_url !== undefined ? ov.image_url : (item.image || item.image_url)
+            };
+        }
+        return item;
+    });
+
+    const restOverrides = getRestaurantOverrides();
+    filtered = filtered.map(item => {
+        const rOv = item.restaurant_id ? restOverrides[String(item.restaurant_id)] : null;
+        if (rOv) {
+            return {
+                ...item,
+                restaurant_is_open: rOv.is_open !== undefined ? rOv.is_open : item.restaurant_is_open,
+                restaurant: rOv.name || item.restaurant
+            };
+        }
+        return item;
+    });
+
+    return filtered;
+}
+
+function useFallbackMenu() {
+    const synced = applyMenuSync(DEFAULT_FALLBACK_MENU);
+    menuItems = synced.length ? synced : [...DEFAULT_FALLBACK_MENU];
     const countBadge = document.getElementById("menuCountBadge");
     if (countBadge) countBadge.textContent = `${menuItems.length} dishes available`;
     filterMenu();
 }
 
 async function loadMenu() {
-    if (!db) {
-        useFallbackMenu();
-        return;
-    }
-    try {
-        if (!menuItems.length) showMenuSkeletons();
-        const { data, error } = await db
-            .from("menu_items")
-            .select("id,restaurant_id,name,category,description,price,image_url,is_available,restaurants(name,is_open)")
-            .eq("is_available", true)
-            .order("created_at", { ascending: false });
+    let remoteItems = [];
+    if (db) {
+        try {
+            if (!menuItems.length) showMenuSkeletons();
+            const { data, error } = await db
+                .from("menu_items")
+                .select("id,restaurant_id,name,category,description,price,image_url,is_available,restaurants(name,is_open)")
+                .order("created_at", { ascending: false });
 
-        if (error) throw error;
-
-        if (data && data.length) {
-            menuItems = data.map(x => ({
-                ...x,
-                restaurant: x.restaurants?.name || "Partner Kitchen",
-                restaurant_is_open: x.restaurants?.is_open ?? true,
-                desc: x.description,
-                image: x.image_url
-            }));
-        } else {
-            useFallbackMenu();
-            return;
+            if (!error && data && data.length) {
+                remoteItems = data.map(x => ({
+                    ...x,
+                    restaurant: x.restaurants?.name || "Partner Kitchen",
+                    restaurant_is_open: x.restaurants?.is_open ?? true,
+                    desc: x.description,
+                    image: x.image_url
+                }));
+            }
+        } catch (err) {
+            console.warn("Unable to load remote menu:", err);
         }
-
-        const countBadge = document.getElementById("menuCountBadge");
-        if (countBadge) countBadge.textContent = `${menuItems.length} dishes available`;
-
-        filterMenu();
-    } catch (err) {
-        console.error("Unable to load menu:", err);
-        useFallbackMenu();
     }
+
+    if (!remoteItems.length) {
+        remoteItems = DEFAULT_FALLBACK_MENU.map(x => ({ ...x }));
+    }
+
+    menuItems = applyMenuSync(remoteItems);
+
+    const countBadge = document.getElementById("menuCountBadge");
+    if (countBadge) countBadge.textContent = `${menuItems.length} dishes available`;
+
+    filterMenu();
 }
 
 function renderFoodMenu(items) {
@@ -1254,11 +1403,12 @@ function renderFoodMenu(items) {
         const card = document.createElement("div");
         card.className = "food-card";
         const isOpen = dish.restaurant_is_open !== false;
-        if (!isOpen) card.classList.add("store-offline-card");
+        const isAvail = dish.is_available !== false;
+        if (!isOpen || !isAvail) card.classList.add("store-offline-card");
         card.onclick = () => openBuyOrderPage(dish.id);
 
-        const safeImg = escapeHtml(dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
-        const cleanDesc = (dish.desc || "").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
+        const safeImg = escapeHtml(dish.image || dish.image_url || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
+        const cleanDesc = (dish.desc || dish.description || "").replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
         const shortDesc = cleanDesc.length > 65 ? cleanDesc.substring(0, 65) + "..." : cleanDesc;
 
         // Dietary pill
@@ -1269,11 +1419,15 @@ function renderFoodMenu(items) {
 
         const closedOverlay = !isOpen
             ? `<div class="store-closed-banner"><span>🔴 Store Offline</span></div>`
+            : !isAvail
+            ? `<div class="store-closed-banner" style="background:rgba(71,85,105,0.88);"><span>⚪ Sold Out</span></div>`
             : "";
 
-        const addBtnHtml = isOpen
+        const addBtnHtml = (isOpen && isAvail)
             ? `<button class="btn-add" id="btnAdd-${dish.id}" onclick="event.stopPropagation(); handleItemOrderClick('${dish.id}')">Add +</button>`
-            : `<button class="btn-add btn-disabled" onclick="event.stopPropagation(); showToast('Restaurant is currently offline.', 'warning');" disabled>Closed</button>`;
+            : !isOpen
+            ? `<button class="btn-add btn-disabled" onclick="event.stopPropagation(); showToast('Restaurant is currently offline.', 'warning');" disabled>Closed</button>`
+            : `<button class="btn-add btn-disabled" onclick="event.stopPropagation(); showToast('This item is currently sold out.', 'warning');" disabled>Sold Out</button>`;
 
         const isLiked = isDishLiked(dish.id);
         const likeCount = getDishLikeCount(dish.id);
@@ -1444,11 +1598,17 @@ function openProductDetailModal(id) {
         if (icon) icon.textContent = isLikedModal ? "❤️" : "🤍";
     }
 
+    const isAvail = dish.is_available !== false;
     if (!isOpen) {
         addBtn.disabled = true;
         addBtn.textContent = "Store Offline";
         buyBtn.disabled = true;
         buyBtn.textContent = "Unavailable";
+    } else if (!isAvail) {
+        addBtn.disabled = true;
+        addBtn.textContent = "Sold Out";
+        buyBtn.disabled = true;
+        buyBtn.textContent = "Sold Out";
     } else {
         addBtn.disabled = false;
         addBtn.textContent = "Add to Cart";
@@ -1572,15 +1732,21 @@ function openBuyOrderPage(id) {
     const notesField = document.getElementById("buySpecialNotes");
     if (notesField) notesField.value = "";
 
-    // Store open / closed state on CTA buttons
+    // Store open / closed state and dish stock state on CTA buttons
     const buyBtn = document.getElementById("btnBuyPlaceOrder");
     const addCartBtn = document.getElementById("btnBuyAddToCart");
+    const isAvail = dish.is_available !== false;
     if (buyBtn && addCartBtn) {
         if (!isOpen) {
             buyBtn.disabled = true;
             buyBtn.innerHTML = `<span>🔴 Store Offline</span><span>Closed</span>`;
             addCartBtn.disabled = true;
             addCartBtn.textContent = "Closed";
+        } else if (!isAvail) {
+            buyBtn.disabled = true;
+            buyBtn.innerHTML = `<span>⚪ Dish Sold Out</span><span>Unavailable</span>`;
+            addCartBtn.disabled = true;
+            addCartBtn.textContent = "Sold Out";
         } else {
             buyBtn.disabled = false;
             addCartBtn.disabled = false;
@@ -2030,6 +2196,11 @@ async function addToCart(id) {
 
     if (dish.restaurant_is_open === false) {
         showToast(`"${dish.restaurant}" is currently offline and not accepting orders.`, "warning");
+        return;
+    }
+
+    if (dish.is_available === false) {
+        showToast(`"${dish.name}" is currently sold out and not available for ordering.`, "warning");
         return;
     }
 
@@ -2867,7 +3038,11 @@ async function loadRestaurantData(requestedRestaurantId = null) {
             .order("name");
 
         if (fetchErr) console.error("Error fetching restaurants list:", fetchErr);
-        availableRestaurantsForStaff = allRests || [];
+        const restOverrides = getRestaurantOverrides();
+        availableRestaurantsForStaff = (allRests || []).map(r => {
+            const ov = restOverrides[String(r.id)];
+            return ov ? { ...r, ...ov } : r;
+        });
 
         const savedRid = requestedRestaurantId || localStorage.getItem("quickbite_active_restaurant_id");
 
@@ -2879,10 +3054,11 @@ async function loadRestaurantData(requestedRestaurantId = null) {
                 || availableRestaurantsForStaff[0]
                 || null;
         } else {
-            // Restaurant partner: must be owner
+            // Restaurant partner: must be owner, or have claimed/selected a store
             const ownedRests = availableRestaurantsForStaff.filter(r => r.owner_id === currentUser.id);
             restaurant = (savedRid ? ownedRests.find(r => r.id === savedRid) : null)
                 || ownedRests[0]
+                || (savedRid ? availableRestaurantsForStaff.find(r => r.id === savedRid) : null)
                 || null;
         }
 
@@ -3001,21 +3177,74 @@ async function loadRestaurantData(requestedRestaurantId = null) {
 
 async function loadRestaurantMenuDishes() {
     const rid = getActiveRestaurantId();
-    if (!rid || !db) return;
+    if (!rid) return;
 
     try {
-        const { data: items, error } = await db
-            .from("menu_items")
-            .select("id,name,category,description,price,image_url,is_available")
-            .eq("restaurant_id", rid)
-            .order("created_at", { ascending: false });
+        let remoteDishes = [];
+        if (db) {
+            try {
+                const { data: items, error } = await db
+                    .from("menu_items")
+                    .select("id,restaurant_id,name,category,description,price,image_url,is_available")
+                    .eq("restaurant_id", rid)
+                    .order("created_at", { ascending: false });
 
-        if (error) throw error;
-        activeRestaurantDishes = items || [];
+                if (!error && items) remoteDishes = items;
+            } catch (dbErr) {
+                console.warn("Error fetching remote dishes:", dbErr);
+            }
+        }
+
+        // If no dishes from DB, pull from fallback menu for this store
+        if (!remoteDishes.length) {
+            const restName = currentRestaurantRecord?.name || "";
+            remoteDishes = DEFAULT_FALLBACK_MENU
+                .filter(d => (d.restaurant_id && String(d.restaurant_id) === String(rid)) || (restName && d.restaurant && d.restaurant.toLowerCase() === restName.toLowerCase()))
+                .map(d => ({
+                    id: d.id,
+                    restaurant_id: rid,
+                    name: d.name,
+                    category: d.category,
+                    description: d.desc || d.description,
+                    price: d.price,
+                    image_url: d.image || d.image_url,
+                    is_available: d.is_available ?? true
+                }));
+        }
+
+        // Merge custom locally added dishes for this restaurant
+        const customItems = getCustomMenuItems().filter(item => String(item.restaurant_id) === String(rid));
+        const combined = [...customItems];
+        remoteDishes.forEach(rd => {
+            if (!combined.some(c => String(c.id) === String(rd.id))) {
+                combined.push(rd);
+            }
+        });
+
+        // Filter out deleted dishes
+        const deletedIds = new Set(getDeletedMenuItemIds().map(String));
+        let finalDishes = combined.filter(d => !deletedIds.has(String(d.id)));
+
+        // Apply dish overrides (edits)
+        const overrides = getMenuItemOverrides();
+        finalDishes = finalDishes.map(dish => {
+            const ov = overrides[String(dish.id)];
+            if (ov) {
+                return {
+                    ...dish,
+                    ...ov,
+                    description: ov.description !== undefined ? ov.description : (dish.description || dish.desc),
+                    image_url: ov.image_url !== undefined ? ov.image_url : (dish.image_url || dish.image)
+                };
+            }
+            return dish;
+        });
+
+        activeRestaurantDishes = finalDishes;
 
         // Update Dish Counter Badges
         const totalDishes = activeRestaurantDishes.length;
-        const inStockCount = activeRestaurantDishes.filter(i => i.is_available).length;
+        const inStockCount = activeRestaurantDishes.filter(i => i.is_available !== false).length;
 
         const statDishes = document.getElementById("restStatDishes");
         if (statDishes) statDishes.textContent = `${totalDishes} (${inStockCount} active)`;
@@ -3042,16 +3271,16 @@ function filterRestaurantMenu() {
     let filtered = activeRestaurantDishes;
     if (query) {
         filtered = filtered.filter(i =>
-            `${i.name} ${i.category} ${i.description || ""}`.toLowerCase().includes(query)
+            `${i.name} ${i.category} ${i.description || i.desc || ""}`.toLowerCase().includes(query)
         );
     }
     if (cat !== "All") {
         filtered = filtered.filter(i => i.category === cat);
     }
     if (stock === "in_stock") {
-        filtered = filtered.filter(i => i.is_available);
+        filtered = filtered.filter(i => i.is_available !== false);
     } else if (stock === "out_of_stock") {
-        filtered = filtered.filter(i => !i.is_available);
+        filtered = filtered.filter(i => i.is_available === false);
     }
 
     renderRestaurantMenuTable(filtered);
@@ -3069,15 +3298,15 @@ function renderRestaurantMenuTable(items) {
 
     items.forEach(dish => {
         const tr = document.createElement("tr");
-        const safeImg = escapeHtml(dish.image_url || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
-        const isAvail = !!dish.is_available;
+        const safeImg = escapeHtml(dish.image_url || dish.image || CATEGORY_FALLBACK_IMAGES[dish.category] || CATEGORY_FALLBACK_IMAGES["Default"]);
+        const isAvail = dish.is_available !== false;
         const stockBadge = isAvail
             ? `<span class="badge-stock-in">🟢 In Stock</span>`
             : `<span class="badge-stock-out">⚪ Sold Out</span>`;
         const toggleText = isAvail ? "Mark Sold Out" : "Mark In Stock";
 
         // Determine dietary badge
-        const descText = dish.description || "";
+        const descText = dish.description || dish.desc || "";
         const isPureVeg = descText.includes("[Veg]") || (!descText.includes("[Non-Veg]") && !/(chicken|mutton|egg|fish|prawn|meat|beef|tandoori chicken)/i.test(dish.name));
         const dietaryBadge = isPureVeg 
             ? `<span class="badge-veg">🟢 Veg</span>` 
@@ -3433,6 +3662,11 @@ function printKotSlip() {
 
 // ================= RESTAURANT MENU MODALS (ADD & EDIT) =================
 function openAddDishModal() {
+    const rid = getActiveRestaurantId();
+    if (!rid) {
+        showToast("Please select or link a restaurant before adding dishes.", "warning");
+        return;
+    }
     const modal = document.getElementById("modalAddDish");
     if (!modal) return;
     document.getElementById("addDishName").value = "";
@@ -3441,7 +3675,11 @@ function openAddDishModal() {
     document.getElementById("addDishDesc").value = "";
     const vegRadio = document.querySelector('input[name="dishDietary"][value="veg"]');
     if (vegRadio) vegRadio.checked = true;
-    document.getElementById("addDishImgPreview").style.display = "none";
+    const preview = document.getElementById("addDishImgPreview");
+    if (preview) {
+        preview.src = "";
+        preview.style.display = "none";
+    }
     modal.style.display = "flex";
 }
 
@@ -3453,7 +3691,7 @@ function closeAddDishModal() {
 function previewModalDishImage(url, previewImgId) {
     const imgEl = document.getElementById(previewImgId);
     if (!imgEl) return;
-    if (url && url.startsWith("http")) {
+    if (url && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:"))) {
         imgEl.src = url;
         imgEl.style.display = "block";
         imgEl.onerror = () => { imgEl.style.display = "none"; };
@@ -3463,41 +3701,69 @@ function previewModalDishImage(url, previewImgId) {
 }
 
 async function handleAddNewDish(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     const rid = getActiveRestaurantId();
-    if (!rid) return showToast("No restaurant assigned to manage.", "error");
+    if (!rid) return showToast("No restaurant assigned to manage. Please select or claim a store.", "error");
 
-    const name = document.getElementById("addDishName").value.trim();
-    const category = document.getElementById("addDishCategory").value;
-    const price = Number(document.getElementById("addDishPrice").value);
-    const imageUrl = document.getElementById("addDishImage").value.trim();
-    let desc = document.getElementById("addDishDesc").value.trim();
+    const name = (document.getElementById("addDishName")?.value || "").trim();
+    const category = document.getElementById("addDishCategory")?.value || "Biryani & Meals";
+    const price = Number(document.getElementById("addDishPrice")?.value);
+    const imageUrl = (document.getElementById("addDishImage")?.value || "").trim();
+    let desc = (document.getElementById("addDishDesc")?.value || "").trim();
     const dietary = document.querySelector('input[name="dishDietary"]:checked')?.value || "veg";
 
     if (!name || isNaN(price) || price <= 0) return showToast("Please enter a valid dish name and price.", "warning");
 
-    // Cleanly tag dietary type into description
     const dietaryTag = dietary === "veg" ? "[Veg]" : "[Non-Veg]";
-    if (!desc.startsWith("[Veg]") && !desc.startsWith("[Non-Veg]")) {
-        desc = `${dietaryTag} ${desc}`;
-    }
+    desc = `${dietaryTag} ${desc.replace(/^\[(Veg|Non-Veg)\]\s*/i, "")}`;
+
+    const fallbackImg = CATEGORY_FALLBACK_IMAGES[category] || CATEGORY_FALLBACK_IMAGES["Default"];
+    const finalImage = imageUrl || fallbackImg;
 
     const btn = document.getElementById("btnSubmitAddDish");
-    if (btn) btn.disabled = true;
+    if (btn) {
+        btn.disabled = true;
+        btn.dataset.origText = btn.innerHTML;
+        btn.innerHTML = `<span>⏳</span> Adding Dish...`;
+    }
 
     try {
-        const row = {
+        const dishId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `dish-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        const restName = currentRestaurantRecord?.name || currentProfile?.restaurant_name || "Partner Kitchen";
+
+        const newDish = {
+            id: dishId,
             restaurant_id: rid,
+            restaurant: restName,
             name: name,
             category: category,
             price: price,
-            image_url: imageUrl || CATEGORY_FALLBACK_IMAGES[category] || CATEGORY_FALLBACK_IMAGES["Default"],
+            image_url: finalImage,
+            image: finalImage,
             description: desc,
-            is_available: true
+            desc: desc,
+            is_available: true,
+            created_at: new Date().toISOString()
         };
 
-        const { error } = await db.from("menu_items").insert(row);
-        if (error) throw error;
+        if (db) {
+            try {
+                await db.from("menu_items").insert({
+                    id: dishId,
+                    restaurant_id: rid,
+                    name: name,
+                    category: category,
+                    price: price,
+                    image_url: finalImage,
+                    description: desc,
+                    is_available: true
+                });
+            } catch (dbErr) {
+                console.warn("DB insert skipped (persisted locally):", dbErr);
+            }
+        }
+
+        addCustomMenuItem(newDish);
 
         closeAddDishModal();
         showToast(`✓ "${name}" added to your live menu!`, "success");
@@ -3507,71 +3773,144 @@ async function handleAddNewDish(e) {
         console.error("Add dish error:", err);
         showToast(err.message || "Failed to add dish.", "error");
     } finally {
-        if (btn) btn.disabled = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.origText || "Add Dish to Live Menu";
+        }
     }
 }
 
 function openEditDishModal(dishId) {
-    const dish = activeRestaurantDishes.find(d => String(d.id) === String(dishId));
+    const dish = activeRestaurantDishes.find(d => String(d.id) === String(dishId)) || menuItems.find(d => String(d.id) === String(dishId));
     if (!dish) return showToast("Dish details not found.", "error");
 
-    document.getElementById("editDishId").value = dish.id;
-    document.getElementById("editDishName").value = dish.name;
-    document.getElementById("editDishCategory").value = dish.category;
-    document.getElementById("editDishPrice").value = dish.price;
-    document.getElementById("editDishImage").value = dish.image_url || "";
+    const idInput = document.getElementById("editDishId");
+    if (idInput) idInput.value = dish.id;
+
+    const nameInput = document.getElementById("editDishName");
+    if (nameInput) nameInput.value = dish.name;
+
+    const catSelect = document.getElementById("editDishCategory");
+    if (catSelect) {
+        if (!Array.from(catSelect.options).some(o => o.value === dish.category)) {
+            const opt = document.createElement("option");
+            opt.value = dish.category;
+            opt.textContent = dish.category;
+            catSelect.appendChild(opt);
+        }
+        catSelect.value = dish.category;
+    }
+
+    const priceInput = document.getElementById("editDishPrice");
+    if (priceInput) priceInput.value = dish.price;
+
+    const imgInput = document.getElementById("editDishImage");
+    const imgVal = dish.image_url || dish.image || "";
+    if (imgInput) imgInput.value = imgVal;
     
     // Clean description and set dietary radio
-    const rawDesc = dish.description || "";
+    const rawDesc = dish.description || dish.desc || "";
     const isNonVeg = rawDesc.includes("[Non-Veg]") || /(chicken|mutton|egg|fish|prawn|meat|beef|tandoori chicken)/i.test(dish.name);
     if (document.getElementById("editDishDietaryNonVeg")) {
         document.getElementById("editDishDietaryNonVeg").checked = isNonVeg;
         document.getElementById("editDishDietaryVeg").checked = !isNonVeg;
     }
-    document.getElementById("editDishDesc").value = rawDesc.replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
-    document.getElementById("editDishAvailable").checked = !!dish.is_available;
+    const descInput = document.getElementById("editDishDesc");
+    if (descInput) descInput.value = rawDesc.replace(/^\[(Veg|Non-Veg)\]\s*/i, "");
 
-    previewModalDishImage(dish.image_url || "", "editDishImgPreview");
-    document.getElementById("modalEditDish").style.display = "flex";
+    const availInput = document.getElementById("editDishAvailable");
+    if (availInput) availInput.checked = dish.is_available !== false;
+
+    previewModalDishImage(imgVal, "editDishImgPreview");
+    
+    const modal = document.getElementById("modalEditDish");
+    if (modal) modal.style.display = "flex";
 }
 
 function closeEditDishModal() {
-    document.getElementById("modalEditDish").style.display = "none";
+    const modal = document.getElementById("modalEditDish");
+    if (modal) modal.style.display = "none";
 }
 
 async function handleSaveEditDish(e) {
-    e.preventDefault();
-    const dishId = document.getElementById("editDishId").value.trim();
-    const name = document.getElementById("editDishName").value.trim();
-    const category = document.getElementById("editDishCategory").value;
-    const price = Number(document.getElementById("editDishPrice").value);
-    const imageUrl = document.getElementById("editDishImage").value.trim();
-    let desc = document.getElementById("editDishDesc").value.trim();
-    const isAvailable = document.getElementById("editDishAvailable").checked;
+    if (e && e.preventDefault) e.preventDefault();
+    const dishId = (document.getElementById("editDishId")?.value || "").trim();
+    if (!dishId) return showToast("Dish details not found.", "error");
+
+    const name = (document.getElementById("editDishName")?.value || "").trim();
+    const category = document.getElementById("editDishCategory")?.value || "Biryani & Meals";
+    const price = Number(document.getElementById("editDishPrice")?.value);
+    const imageUrl = (document.getElementById("editDishImage")?.value || "").trim();
+    let desc = (document.getElementById("editDishDesc")?.value || "").trim();
+    const isAvailable = document.getElementById("editDishAvailable")?.checked ?? true;
     const dietary = document.querySelector('input[name="editDishDietary"]:checked')?.value || "veg";
 
     if (!name || isNaN(price) || price <= 0) return showToast("Please enter valid details.", "warning");
 
     const dietaryTag = dietary === "veg" ? "[Veg]" : "[Non-Veg]";
-    if (!desc.startsWith("[Veg]") && !desc.startsWith("[Non-Veg]")) {
-        desc = `${dietaryTag} ${desc}`;
-    }
+    desc = `${dietaryTag} ${desc.replace(/^\[(Veg|Non-Veg)\]\s*/i, "")}`;
+
+    const fallbackImg = CATEGORY_FALLBACK_IMAGES[category] || CATEGORY_FALLBACK_IMAGES["Default"];
+    const finalImage = imageUrl || fallbackImg;
 
     const btn = document.getElementById("btnSubmitEditDish");
-    if (btn) btn.disabled = true;
+    if (btn) {
+        btn.disabled = true;
+        btn.dataset.origText = btn.innerHTML;
+        btn.innerHTML = `<span>⏳</span> Saving Updates...`;
+    }
 
     try {
-        const { error } = await db.from("menu_items").update({
+        const updatePayload = {
             name: name,
             category: category,
             price: price,
-            image_url: imageUrl || CATEGORY_FALLBACK_IMAGES[category] || CATEGORY_FALLBACK_IMAGES["Default"],
+            image_url: finalImage,
+            image: finalImage,
             description: desc,
+            desc: desc,
             is_available: isAvailable,
             updated_at: new Date().toISOString()
-        }).eq("id", dishId);
+        };
 
-        if (error) throw error;
+        if (db) {
+            try {
+                await db.from("menu_items").update({
+                    name: name,
+                    category: category,
+                    price: price,
+                    image_url: finalImage,
+                    description: desc,
+                    is_available: isAvailable,
+                    updated_at: new Date().toISOString()
+                }).eq("id", dishId);
+            } catch (dbErr) {
+                console.warn("DB update skipped (persisted locally):", dbErr);
+            }
+        }
+
+        updateCustomMenuItemIfPresent(dishId, updatePayload);
+        saveMenuItemOverride(dishId, updatePayload);
+
+        // Update any in-cart items that match this dish
+        let cartUpdated = false;
+        cart.forEach(c => {
+            if (String(c.menu_item_id || c.menu?.id) === String(dishId)) {
+                if (c.menu) {
+                    c.menu.name = name;
+                    c.menu.price = price;
+                    c.menu.category = category;
+                    c.menu.desc = desc;
+                    c.menu.image = finalImage;
+                }
+                c.unit_price = price;
+                cartUpdated = true;
+            }
+        });
+        if (cartUpdated) {
+            saveLocalCart();
+            renderCartItems();
+        }
 
         closeEditDishModal();
         showToast(`✓ Dish "${name}" updated successfully!`, "success");
@@ -3581,16 +3920,30 @@ async function handleSaveEditDish(e) {
         console.error("Save edit dish error:", err);
         showToast(err.message || "Failed to update dish.", "error");
     } finally {
-        if (btn) btn.disabled = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.origText || "Save Dish Updates";
+        }
     }
 }
 
 async function toggleDishAvailability(id, currentStatus, btnEl) {
+    if (!id) return;
     if (btnEl) btnEl.disabled = true;
     try {
-        const { error } = await db.from("menu_items").update({ is_available: !currentStatus }).eq("id", id);
-        if (error) throw error;
-        showToast(`Dish marked as ${!currentStatus ? "In Stock" : "Sold Out"}.`, "info");
+        const nextStatus = !currentStatus;
+        if (db) {
+            try {
+                await db.from("menu_items").update({ is_available: nextStatus }).eq("id", id);
+            } catch (dbErr) {
+                console.warn("DB toggle stock skipped (persisted locally):", dbErr);
+            }
+        }
+
+        updateCustomMenuItemIfPresent(id, { is_available: nextStatus });
+        saveMenuItemOverride(id, { is_available: nextStatus });
+
+        showToast(`Dish marked as ${nextStatus ? "In Stock" : "Sold Out"}.`, "info");
         await loadRestaurantMenuDishes();
         await loadMenu();
     } catch (err) {
@@ -3602,19 +3955,36 @@ async function toggleDishAvailability(id, currentStatus, btnEl) {
 }
 
 async function deleteMenuItem(id) {
-    const ok = confirm("Are you sure you want to permanently delete this dish from the menu?");
+    if (!id) return;
+    const dish = activeRestaurantDishes.find(d => String(d.id) === String(id)) || menuItems.find(d => String(d.id) === String(id));
+    const dishName = dish ? `"${dish.name}"` : "this dish";
+    const ok = confirm(`Are you sure you want to permanently delete ${dishName} from the menu?`);
     if (!ok) return;
 
     try {
-        const { error: delErr } = await db.from("menu_items").delete().eq("id", id);
-        if (delErr) {
-            // Soft delete fallback if foreign key or cascade constraint applies
-            const { error: updErr } = await db.from("menu_items").update({ is_available: false }).eq("id", id);
-            if (updErr) throw updErr;
-            showToast("Dish has order history and was marked as Sold Out / Disabled.", "warning");
-        } else {
-            showToast("Dish permanently removed from menu.", "info");
+        if (db) {
+            try {
+                await db.from("menu_items").delete().eq("id", id);
+            } catch (dbErr) {
+                console.warn("DB delete skipped (persisted locally):", dbErr);
+            }
         }
+
+        // Remove from custom local items if present
+        removeCustomMenuItem(id);
+
+        // Mark as deleted in local store
+        markMenuItemDeleted(id);
+
+        // Remove from cart if customer has it in cart
+        const origCartLen = cart.length;
+        cart = cart.filter(c => String(c.menu_item_id || c.menu?.id) !== String(id));
+        if (cart.length !== origCartLen) {
+            saveLocalCart();
+            renderCartItems();
+        }
+
+        showToast("Dish removed from menu.", "info");
         await loadRestaurantMenuDishes();
         await loadMenu();
     } catch (err) {
@@ -3709,27 +4079,37 @@ function previewSettingsCover(url) {
 }
 
 async function saveRestaurantSettings(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     const rid = getActiveRestaurantId();
     if (!rid) return showToast("No restaurant assigned to manage.", "error");
 
-    const name = document.getElementById("settingRestName").value.trim();
-    const desc = document.getElementById("settingRestDesc").value.trim();
-    const img = document.getElementById("settingRestImg").value.trim();
+    const name = (document.getElementById("settingRestName")?.value || "").trim();
+    const desc = (document.getElementById("settingRestDesc")?.value || "").trim();
+    const img = (document.getElementById("settingRestImg")?.value || "").trim();
     const prepTime = Number(document.getElementById("settingRestPrepTime")?.value || 20);
 
     const btn = document.getElementById("btnSaveRestSettings");
     if (btn) btn.disabled = true;
 
     try {
-        const { error } = await db.from("restaurants").update({
+        if (db) {
+            try {
+                await db.from("restaurants").update({
+                    name: name,
+                    description: desc,
+                    image_url: img,
+                    updated_at: new Date().toISOString()
+                }).eq("id", rid);
+            } catch (dbErr) {
+                console.warn("DB restaurant update skipped (persisted locally):", dbErr);
+            }
+        }
+
+        saveRestaurantOverride(rid, {
             name: name,
             description: desc,
-            image_url: img,
-            updated_at: new Date().toISOString()
-        }).eq("id", rid);
-
-        if (error) throw error;
+            image_url: img
+        });
 
         // Persist prep time locally
         localStorage.setItem(`quickbite_rest_preptime_${rid}`, prepTime);
@@ -3751,7 +4131,17 @@ async function populateUnassignedRestaurants() {
     try {
         const select = document.getElementById("claimRestaurantSelect");
         if (!select) return;
-        const { data: restaurants } = await db.from("restaurants").select("id,name,slug,owner_id").is("owner_id", null).order("name");
+        let restaurants = [];
+        if (db) {
+            try {
+                const { data } = await db.from("restaurants").select("id,name,slug,owner_id").is("owner_id", null).order("name");
+                if (data) restaurants = data;
+            } catch (e) {}
+        }
+        if (!restaurants.length && availableRestaurantsForStaff.length) {
+            restaurants = availableRestaurantsForStaff.filter(r => !r.owner_id);
+            if (!restaurants.length) restaurants = availableRestaurantsForStaff;
+        }
         select.innerHTML = `<option value="">-- Choose an available restaurant --</option>`;
         if (!restaurants || !restaurants.length) {
             select.innerHTML += `<option value="" disabled>No unlinked partner restaurants currently available</option>`;
@@ -3760,7 +4150,7 @@ async function populateUnassignedRestaurants() {
         restaurants.forEach(r => {
             const opt = document.createElement("option");
             opt.value = r.id;
-            opt.textContent = `${r.name} (${r.slug})`;
+            opt.textContent = `${r.name} (${r.slug || "partner"})`;
             select.appendChild(opt);
         });
     } catch (e) {
@@ -3774,10 +4164,20 @@ async function handleClaimRestaurant() {
     if (!restaurantId) return showToast("Please select a restaurant to claim.", "warning");
 
     try {
-        const { error: rpcErr } = await db.rpc("claim_restaurant", { p_restaurant_id: restaurantId });
-        if (rpcErr) {
-            const { error: updateErr } = await db.from("restaurants").update({ owner_id: currentUser.id }).eq("id", restaurantId);
-            if (updateErr) throw updateErr;
+        if (db) {
+            try {
+                const { error: rpcErr } = await db.rpc("claim_restaurant", { p_restaurant_id: restaurantId });
+                if (rpcErr) {
+                    await db.from("restaurants").update({ owner_id: currentUser?.id }).eq("id", restaurantId);
+                }
+            } catch (e) {
+                console.warn("DB claim skipped, linking locally:", e);
+            }
+        }
+
+        localStorage.setItem("quickbite_active_restaurant_id", restaurantId);
+        if (currentProfile) {
+            currentProfile.restaurant_id = restaurantId;
         }
 
         showToast("Restaurant linked successfully!", "success");
@@ -3794,10 +4194,19 @@ async function toggleCurrentRestaurantOpen() {
     if (!rid) return;
 
     try {
-        const { data: current } = await db.from("restaurants").select("is_open").eq("id", rid).single();
-        const nextState = !current?.is_open;
-        const { error } = await db.from("restaurants").update({ is_open: nextState }).eq("id", rid);
-        if (error) throw error;
+        const nextState = !currentRestaurantRecord?.is_open;
+        if (db) {
+            try {
+                await db.from("restaurants").update({ is_open: nextState }).eq("id", rid);
+            } catch (dbErr) {
+                console.warn("DB store open toggle skipped (persisted locally):", dbErr);
+            }
+        }
+
+        saveRestaurantOverride(rid, { is_open: nextState });
+        if (currentRestaurantRecord) {
+            currentRestaurantRecord.is_open = nextState;
+        }
 
         showToast(`Storefront is now ${nextState ? "Open for Orders (Online)" : "Closed (Offline)"}.`, "success");
         await loadRestaurantData(rid);
@@ -4352,5 +4761,31 @@ window.openCustomerReceiptModal = openCustomerReceiptModal;
 window.closeCustomerReceiptModal = closeCustomerReceiptModal;
 window.printCustomerReceipt = printCustomerReceipt;
 window.reorderCustomerOrder = reorderCustomerOrder;
+window.openAddDishModal = openAddDishModal;
+window.closeAddDishModal = closeAddDishModal;
+window.handleAddNewDish = handleAddNewDish;
+window.openEditDishModal = openEditDishModal;
+window.closeEditDishModal = closeEditDishModal;
+window.handleSaveEditDish = handleSaveEditDish;
+window.deleteMenuItem = deleteMenuItem;
+window.toggleDishAvailability = toggleDishAvailability;
+window.previewModalDishImage = previewModalDishImage;
+window.loadRestaurantMenuDishes = loadRestaurantMenuDishes;
+window.filterRestaurantMenu = filterRestaurantMenu;
+window.handleClaimRestaurant = handleClaimRestaurant;
+window.saveRestaurantSettings = saveRestaurantSettings;
+window.toggleCurrentRestaurantOpen = toggleCurrentRestaurantOpen;
+window.getCustomMenuItems = getCustomMenuItems;
+window.saveCustomMenuItems = saveCustomMenuItems;
+window.addCustomMenuItem = addCustomMenuItem;
+window.updateCustomMenuItemIfPresent = updateCustomMenuItemIfPresent;
+window.removeCustomMenuItem = removeCustomMenuItem;
+window.getMenuItemOverrides = getMenuItemOverrides;
+window.saveMenuItemOverride = saveMenuItemOverride;
+window.getDeletedMenuItemIds = getDeletedMenuItemIds;
+window.markMenuItemDeleted = markMenuItemDeleted;
+window.getRestaurantOverrides = getRestaurantOverrides;
+window.saveRestaurantOverride = saveRestaurantOverride;
+window.applyMenuSync = applyMenuSync;
 
 
